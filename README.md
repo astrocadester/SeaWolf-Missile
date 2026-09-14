@@ -1,7 +1,7 @@
 # seawolf-missile
 This project is a byte-exact reconstruction and reverse-engineering baseline for Sea Wolf / Missile released by Dave Nutting Associates (DNA) / Bally in 1978. This was a two-in-one game pack for the Bally Professional Arcade / Astrocade.
 
-![Sea Wolf / Missile Box](images/seawolf-missile-cartridge-label.jpg)
+![Sea Wolf / Missile Box](images/seawolf-missile-catalog.png)
 
 The original game was designed and programmed by:
 - Dave Nutting (Game Designer)
