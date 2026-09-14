@@ -1,10 +1,8 @@
 # Seawolf / Missile
 
-This project is a byte-exact reconstruction and documented disassembly of **Seawolf / Missile**, published by Bally in 1978 for the Bally Professional Arcade / Astrocade.
+This project is a byte-exact reconstruction and documented disassembly of **Seawolf / Missile** Dave Nutting Associates (DNA) game developed by Rick Spiece published by Bally in 1978 for the Bally Professional Arcade / Astrocade.
 
-**Seawolf / Missile** is a Dave Nutting Associates (DNA) game developed by Rick Spiece. 
-
-This prject build upon the disassembly continues Adam Trionfo's 2011 v0.002
+This project builds upon the disassembly work of Adam Trionfo's 2011 v0.002
 
 ![Seawolf / Missile catalog artwork](images/seawolf-missile-catalog.png)
 
@@ -42,62 +40,6 @@ This prject build upon the disassembly continues Adam Trionfo's 2011 v0.002
 
 `src/zout/` and `roms/astrocde.zip` are generated outputs. The source and
 reference material remain separate from the build products.
-
-## Build
-
-Both scripts use the bundled zmac 1.3 assembler. 
-
-Linux:
-
-```sh
-./build.sh
-```
-
-Windows 10/11:
-
-```bat
-build.bat
-```
-
-Each script performs the same three steps:
-
-1. Assemble `src/Seawolf.asm` into `src/zout/seawolf.bin` and
-   `src/zout/seawolf.lst`.
-2. Verify the generated cartridge and `astro.bin` against their required SHA-1
-   values. A mismatch stops the build.
-3. Create `roms/astrocde.zip` in MAME's merged software-list layout.
-
-Generated files:
-
-```text
-src/zout/seawolf.bin
-src/zout/seawolf.lst
-roms/astrocde.zip
-```
-
-ROM SHA-1:
-
-```text
-b902c941997c9d150a560435bf517c6a28137ecc
-```
-
-The archive contains:
-
-```text
-astro.bin
-seawolf/seawolf.bin
-```
-
-## Run in MAME
-
-From the project directory:
-
-```sh
-mame astrocde -window -cart seawolf -rompath roms
-```
-
-MAME opens `roms/astrocde.zip`, loads `astro.bin`, and then loads
-`seawolf/seawolf.bin` for the selected cartridge.
 
 ## ROM organization
 
@@ -197,9 +139,68 @@ byte sequences. Version 0.003 preserves and labels these layouts:
 These overlaps are intentional parts of the original 2 KB image. The source
 expresses them without changing the assembled bytes.
 
+## Build
+
+Both scripts use the bundled zmac 1.3 assembler. 
+
+Linux:
+
+```sh
+./build.sh
+```
+
+Windows 10/11:
+
+```bat
+build.bat
+```
+
+Each script performs the same three steps:
+
+1. Assemble `src/Seawolf.asm` into `src/zout/seawolf.bin` and
+   `src/zout/seawolf.lst`.
+2. Verify the generated cartridge and `astro.bin` against their required SHA-1
+   values. A mismatch stops the build.
+3. Create `roms/astrocde.zip` in MAME's merged software-list layout.
+
+**NOTE** A 'normal" mame zip would be seawolf.zip but that would have a dependancy on astrocde.bin. To make testing easier, we bundle into a special ready-to-run mame astrocde.zip
+
+Generated files:
+
+```text
+src/zout/seawolf.bin
+src/zout/seawolf.lst
+roms/astrocde.zip
+```
+
+ROM SHA-1:
+
+```text
+b902c941997c9d150a560435bf517c6a28137ecc
+```
+
+The archive contains:
+
+```text
+astro.bin
+seawolf/seawolf.bin
+```
+
+## Run in MAME
+
+From the project directory:
+
+```sh
+mame astrocde -window -cart seawolf -rompath roms
+```
+
+MAME opens `roms/astrocde.zip`, loads `astro.bin`, and then loads
+`seawolf/seawolf.bin` for the selected cartridge.
+
+
 ## Credits
 
 - Rick Spiece — original game programmer, as credited by the Astrovision manual
 - Adam Trionfo — v0.001 and v0.002 disassembly
 - Richard C. Degler, Adam Trionfo, and Lance F. Squire — `HVGLIB.H` history,
-  transcription, and proofreading
+  transcription
