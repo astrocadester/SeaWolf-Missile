@@ -1,13 +1,10 @@
 # Seawolf / Missile
 
-This project is a byte-exact reconstruction and documented disassembly of
-**Seawolf / Missile**, published by Bally in 1978 for the Bally Professional
-Arcade / Astrocade.
+This project is a byte-exact reconstruction and documented disassembly of **Seawolf / Missile**, published by Bally in 1978 for the Bally Professional Arcade / Astrocade.
 
-The included Astrovision manual credits Rick Spiece as the programmer. 
+**Seawolf / Missile** is a Dave Nutting Associates (DNA) game developed by Rick Spiece. 
 
 This prject build upon the disassembly continues Adam Trionfo's 2011 v0.002
-
 
 ![Seawolf / Missile catalog artwork](images/seawolf-missile-catalog.png)
 
