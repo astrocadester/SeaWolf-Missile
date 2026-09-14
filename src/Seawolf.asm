@@ -1,117 +1,175 @@
-;  "Seawolf/Missile" (Videocade #2002) 
-;  Programmed by Rick Spiece
-;  Release in 1977
-;  Cartridge for Bally/Astrocade Console
+;===============================================================================
+; SEAWOLF / MISSILE - Bally/Astrocade Videocade #2002
+; Programmed by Rick Spiece
 ;
-;  Version .002 - December 7, 2011
-;     - First Public Release
-;     - Binary Output matches byte-for-byte with original
-;       cartridge release.
-;     - Only the original one-day was spent working with
-;       this file, but quite a lot was done.  It seems
-;       worth sharing.  
-;  Version .001 - July 29, 2011
-;     - One day was spent disassembling this file 
-;           
+; Version 0.003 - September 14, 2026
+;   - Added semantic labels for routines, RAM, tables, and graphics.
+;   - Identified the vector-object pool and overlapping instruction entries.
+;   - Retains byte-for-byte identity with the original 2 KB cartridge ROM.
 ;
-;  To assemble this Z-80 source code using ZMAC:
-;  
-;  zmac -d -o <outfile> -x <listfile> <filename>
-;  
-;  For example, assemble this Astrocade Z-80 ROM file:
-;     
-;  zmac -i -m -o seawolf.bin -x seawolf.lst seawolf.asm
+; Version 0.002 - December 7, 2011 - Adam Trionfo public disassembly
+; Version 0.001 - July 29, 2011 - Adam Trionfo initial disassembly
+;
+; Assemble with zmac 1.3:
+;   zmac -i -m -o seawolf.bin -x seawolf.lst Seawolf.asm
+;===============================================================================
 
+        INCLUDE "HVGLIB.H"
 
-INCLUDE "HVGLIB.H"  ; Home Video Game Library
-     
-        ORG   FIRSTC        ; FIRST address in Cartridge
-                                
-        DB    "U"           ; User Cartridge Sentinel
+;-------------------------------------------------------------------------------
+; Game RAM
+;-------------------------------------------------------------------------------
 
-; O.S. Menu Data Structure
+PLAYER_PATTERN_PTR          EQU $4EBF   ; Pattern used for the player sprites
+SOUND_COUNTDOWN             EQU $4EC1
+GAME_FLAGS                  EQU $4EC2   ; Bit 6 selects Missile; bit 7 guards UPI
+INTERRUPT_PHASE             EQU $4EC3
+SPAWN_PHASE                 EQU $4EC4
+EVEN_OBJECT_CURSOR          EQU $4EC5
+ODD_OBJECT_CURSOR           EQU $4EC7
+PLAYER1_SCORE               EQU $4EC9   ; Two-byte packed BCD
+PLAYER2_SCORE               EQU $4ECB   ; Two-byte packed BCD
+PLAYER2_AIM_X               EQU $4ECD
+PLAYER2_SHOT_INDEX          EQU $4ECE
+PLAYER_SHOT_FLAGS           EQU $4ECF
+PLAYER1_SHOT_INDEX          EQU $4ED0
+PLAYER1_AIM_X               EQU $4ED1
+PLAYER1_OLD_SCREEN_ADDR     EQU $4ED2
+PLAYER2_OLD_SCREEN_ADDR     EQU $4ED4
+PLAYER1_LOAD_TIMER          EQU $4ED6
+PLAYER2_LOAD_TIMER          EQU $4ED7
+PLAYER1_RELOAD_TICK         EQU $4ED8
+PLAYER2_RELOAD_TICK         EQU $4ED9
 
-; Menu 1, Choice 1 - "Seawolf"
-        DW    L2007         ; Link to Menu 1, Choice 2
-        DW    L23BF         ; Address of "SEAWOLF" menu text
-        DW    L2031         ; Jump here if "SEAWOLF" selected
-        
-; Menu 1, Choice 2 - "Missile"
-L2007:  DW    MENUST        ; Link to Head of On-Board MENU STart
-        DW    L2363         ; Address of "MISSILE" menu text
-        DW    L200D         ; Jump here if "MISSILE" selected
+; Vector-block allocation. Offsets VBMR through VBOAH are defined in HVGLIB.H.
+; Blocks 0-3 form two spawn pairs, 4-11 are interleaved projectile slots, and
+; blocks 12-15 are the target/aircraft collision pool.
+VECTOR_POOL                 EQU $4EDA
+SPAWN_BLOCK_A0              EQU $4EDA
+SPAWN_BLOCK_A1              EQU $4EE9
+SPAWN_BLOCK_B0              EQU $4EF8
+SPAWN_BLOCK_B1              EQU $4F07
+GAME_PARAMETER_BUFFER       EQU SPAWN_BLOCK_B1 ; Reused before the pool starts
+PLAYER1_PROJECTILE_0        EQU $4F16
+PLAYER2_PROJECTILE_0        EQU $4F25
+PLAYER1_PROJECTILE_1        EQU $4F34
+PLAYER2_PROJECTILE_1        EQU $4F43
+PLAYER1_PROJECTILE_2        EQU $4F52
+PLAYER2_PROJECTILE_2        EQU $4F61
+PLAYER1_PROJECTILE_3        EQU $4F70
+PLAYER2_PROJECTILE_3        EQU $4F7F
+TARGET_BLOCK_0              EQU $4F8E
+TARGET_BLOCK_1              EQU $4F9D
+TARGET_BLOCK_2              EQU $4FAC
+TARGET_BLOCK_3              EQU $4FBB
+SPAWN_TICK_A                EQU $4FCA
+SPAWN_COUNT_A               EQU $4FCB
+SPAWN_TICK_B                EQU $4FCC
+SPAWN_COUNT_B               EQU $4FCD
 
-; Missile Selected from Menu
-L200D:  CALL  L204E
-        EI      
+VECTOR_BLOCK_BYTES          EQU $000F
+PLAYER_VECTOR_STRIDE        EQU $001E   ; Every other vector block
+GAME_FLAG_MISSILE           EQU 6
+GAME_FLAG_UPI_ACTIVE        EQU 7
+IM2_VECTOR_PAGE             EQU $23
+IM2_VECTOR_OFFSET           EQU $10
+
+;-------------------------------------------------------------------------------
+; Cartridge header and menu
+;-------------------------------------------------------------------------------
+
+        ORG     FIRSTC
+
+        DB      "U"                 ; User-cartridge sentinel
+
+        DW      MENU_MISSILE_ENTRY  ; Next menu record
+        DW      TEXT_SEAWOLF
+        DW      START_SEAWOLF
+
+MENU_MISSILE_ENTRY:
+        DW      MENUST               ; End of cartridge menu list
+        DW      TEXT_MISSILE
+        DW      START_MISSILE
+
+;-------------------------------------------------------------------------------
+; Game entry points
+;-------------------------------------------------------------------------------
+
+START_MISSILE:
+        CALL    INITIALIZE_GAME
+        EI
 
         SYSTEM  INTPC            ;  UPI INTerPret with Context create
 
         DO      SETB             ;  UPI SET Byte
         DB      $40              ;  ... Data = 64
-        DW      $4EC2            ;  ... Memory Address = 20162
+        DW      GAME_FLAGS
 
         DO      SETW             ;  UPI SET Word
-        DW      L23AF            ;  ... Data Word = 9135
-        DW      $4EBF            ;  ... Memory Address = 20159
+        DW      PATTERN_MISSILE_LAUNCHER
+        DW      PLAYER_PATTERN_PTR
 
         DO      COLSET           ;  UPI COLors SET
-        DW      L2320            ;  ... Table Address = 8992
+        DW      MISSILE_PALETTE
 
         DO      FILL             ;  UPI FILL memory with data
         DW      $4B90            ;  ... Memory Address = 19344
         DW      $00C8            ;  ... Byte Count = 200
         DB      $FF              ;  ... Data = 255
 
-L2025:  DO      SENTRY           ;  UPI SENse TRansition
+MISSILE_EVENT_LOOP:
+        DO      SENTRY           ; UPI sense transitions
         DW      ALKEYS           ;  ALl KEYS Keypad Mask
 
-        DO      DOIT             ;  UPI DOIT table, branch to translation 
-        DW      L22BA            ;  ... Table Address = 8890
+        DO      DOIT             ;  UPI DOIT table, branch to translation
+        DW      COMMON_DOIT_TABLE
 
-        DO      DOIT             ;  UPI DOIT table, branch to translation 
-        DW      L2748            ;  ... Table Address = 10056
+        DO      DOIT             ;  UPI DOIT table, branch to translation
+        DW      MISSILE_DOIT_TABLE
 
-        DO      MJUMP            ;  UPI Macro JUMP to interpreter 
-        DW      L2025            ;  ... Macro Address = 8229
+        DO      MJUMP            ;  UPI Macro JUMP to interpreter
+        DW      MISSILE_EVENT_LOOP
 
 
-; Seawolf Selected from Menu
-L2031:  CALL    L204E
+START_SEAWOLF:
+        CALL    INITIALIZE_GAME
         LD      A,$20
-        OUT     ($15),A
+        OUT     (VOLC),A
         SYSTEM  INTPC            ;  UPI INTerPret with Context create
 
         DO      COLSET           ;  UPI COLors SET
-        DW      L2324            ;  ... Table Address = 8996
+        DW      SEAWOLF_PALETTE
 
         DO      SETW             ;  UPI SET Word
-        DW      L23A5            ;  ... Data Word = 9125
-        DW      $4EBF            ;  ... Memory Address = 20159
+        DW      PATTERN_SEAWOLF_SUBMARINE
+        DW      PLAYER_PATTERN_PTR
 
-L2042:  DO      SENTRY           ;  UPI SENse TRansition
+SEAWOLF_EVENT_LOOP:
+        DO      SENTRY           ; UPI sense transitions
         DW      ALKEYS           ;  ALl KEYS Keypad Mask
 
         DO      DOIT             ;  UPI DOIT table, branch to translation handler
-        DW      L22BA            ;  ... Table Address = 8890
+        DW      COMMON_DOIT_TABLE
 
         DO      DOIT             ;  UPI DOIT table, branch to translation handler
-        DW      L229E            ;  ... Table Address = 8862
+        DW      SEAWOLF_DOIT_TABLE
 
         DO      MJUMP            ;  UPI Macro JUMP to interpreter subroutine
-        DW      L2042            ;  ... Macro Address = 8258
+        DW      SEAWOLF_EVENT_LOOP
 
 
-L204E:  SYSSUK  GETPAR           ;  UPI Get Game Parameter From User
-        DW      TIMPMT           ;  Prompt is "TIME"
+; Prompts for game time, clears display/game RAM, and installs the IM 2 handler.
+INITIALIZE_GAME:
+        SYSSUK  GETPAR           ; UPI get game parameter
+        DW      TEXT_TIME_PROMPT           ;  Prompt is "TIME"
         DB      $83              ;  ... Digits = 131
-        DW      $4F07            ;  ... Parameter Address = 20231
+        DW      GAME_PARAMETER_BUFFER
 
-        DI      
-        LD      HL,($4F07)
-        LD      ($4FED),HL
+        DI
+        LD      HL,(GAME_PARAMETER_BUFFER)
+        LD      (GTSECS),HL
         POP     HL
-        LD      SP,$4EBF
+        LD      SP,PLAYER_PATTERN_PTR
         PUSH    HL
 
         SYSTEM  INTPC            ;  UPI INTerPret with Context create
@@ -127,76 +185,71 @@ L204E:  SYSSUK  GETPAR           ;  UPI Get Game Parameter From User
         DB      $00              ;  ... Data = 0
 
         DO      FILL             ;  UPI FILL memory with data
-        DW      $4EBF            ;  ... Memory Address = 20159
+        DW      PLAYER_PATTERN_PTR
         DW      $0110            ;  ... Byte Count = 272
         DB      $00              ;  ... Data = 0
 
         DO      FILL             ;  UPI FILL memory with data
-        DW      $4FDD            ;  ... Memory Address = 20445
+        DW      CNT
         DW      $0006            ;  ... Byte Count = 6
         DB      $00              ;  ... Data = 0
 
         DO      SETB             ;  UPI SET Byte
         DB      $01              ;  ... Data = 1
-        DW      $4FCB            ;  ... Memory Address = 20427
+        DW      SPAWN_COUNT_A
 
         DO      SETB             ;  UPI SET Byte
         DB      $02              ;  ... Data = 2
-        DW      $4FCD            ;  ... Memory Address = 20429
+        DW      SPAWN_COUNT_B
 
         DO      SETW             ;  UPI SET Word
         DW      $1B01            ;  ... Data Word = 6913
-        DW      $4FDD            ;  ... Memory Address = 20445
+        DW      CNT
 
         DO      SETW             ;  UPI SET Word
         DW      $AAAA            ;  ... Data Word = 43690
-        DW      $4EC3            ;  ... Memory Address = 20163
+        DW      INTERRUPT_PHASE
 
         DO      SETB             ;  UPI SET Byte
         DB      $01              ;  ... Data = 1
-        DW      $4FF8            ;  ... Memory Address = 20472
+        DW      GAMSTB
 
         DONT    XINTC            ;  UPI eXit INTerpreter with Context
 
-        LD      A,$23
+        LD      A,IM2_VECTOR_PAGE
         LD      I,A
-        LD      A,$10
-        OUT     ($0D),A
+        LD      A,IM2_VECTOR_OFFSET
+        OUT     (INFBK),A
         IM      2
-        RET     
+        RET
 
-; Call from Seawolf DOIT Table
-; SF3 - Sentry, Flag bit 3 has changed
-
+; The SF4 entry begins one byte into the LD HL instruction. At $209E the
+; remaining bytes decode as LD B,$08. This overlap saves one byte.
+SEAWOLF_FLAG3_CHANGED:
         LD      B,$04
-
-; Call from Seawolf DOIT Table        
-; SF4 - Sentry, Flag bit 4 has changed
-; This call from the DOIT table calls right into the middle of 
-;         LD      HL,$0806
-; The SF4 call sees this as the first statement:  
-;         LD      B,$08
-; I've not seen this technique used before, but perhaps it is
-; used to save a couple of bytes... or I disassembled this area
-; wrong.
-        LD      HL,$0806
-        LD      HL,$4ECF
+        DB      $21                  ; LD HL,nn opcode on the SF3 path
+SEAWOLF_FLAG4_CHANGED:
+        LD      B,$08
+        LD      HL,PLAYER_SHOT_FLAGS
         LD      A,B
-        CPL     
+        CPL
         AND     (HL)
         LD      (HL),A
         LD      E,$00
         LD      C,$08
-        EXX     
+        EXX
         LD      B,$04
-L20AE:  EXX     
-        CALL    L20B9
+DRAW_ALL_TORPEDO_INDICATORS_LOOP:
+        EXX
+        CALL    DRAW_TORPEDO_INDICATOR_FROM_INDEX
         INC     E
-        EXX     
-        DJNZ    L20AE
-L20B6:  LD      E,A
+        EXX
+        DJNZ    DRAW_ALL_TORPEDO_INDICATORS_LOOP
+DRAW_ONE_TORPEDO_INDICATOR_FROM_A:
+        LD      E,A
         LD      C,$28
-L20B9:  LD      HL,$2318
+DRAW_TORPEDO_INDICATOR_FROM_INDEX:
+        LD      HL,TORPEDO_INDICATOR_ADDRESS_TABLE
         PUSH    DE
         LD      D,$00
         ADD     HL,DE
@@ -205,107 +258,116 @@ L20B9:  LD      HL,$2318
         INC     HL
         LD      D,(HL)
         BIT     2,B
-        JR      NZ,L20CC
+        JR      NZ,DRAW_TORPEDO_INDICATOR_PATTERN
         LD      A,$44
         ADD     A,E
         LD      E,A
-L20CC   LD      HL,L23C7
+DRAW_TORPEDO_INDICATOR_PATTERN:
+        LD      HL,PATTERN_TORPEDO_INDICATOR
         LD      A,B
-        DI      
-        OUT     ($19),A
+        DI
+        OUT     (XPAND),A
         LD      A,C
         SYSTEM  WRITP            ;  UPI WRITE With Pattern Size Lookup
 
-        EI      
+        EI
         POP     DE
-        RET     
+        RET
 
-; Seawolf/Missile DOIT Table 
-; SKYD - Sentry, KeY is now Down       
+KEY_DOWN:
         LD      C,B
         EX      AF,AF'
-        LD      HL,$4ED1
+MISSILE_POT0_CHANGED:
+        LD      HL,PLAYER1_AIM_X
         LD      A,B
-        CPL     
+        CPL
         AND     $FC
-        RRA     
-        RRA     
+        RRA
+        RRA
         LD      B,(HL)
         LD      (HL),A
         CP      B
         RET     Z
 
         LD      E,A
-        JR      L20F3
-        LD      HL,$4ED1
+        JR      REDRAW_PLAYER1
+SEAWOLF_POT0_CHANGED:
+        LD      HL,PLAYER1_AIM_X
         LD      C,$0B
-        CALL    L214C
-L20F3:  LD      D,$45
-        LD      HL,($4ED2)
+        CALL    CONVERT_POT_POSITION
+REDRAW_PLAYER1:
+        LD      D,$45
+        LD      HL,(PLAYER1_OLD_SCREEN_ADDR)
         LD      A,$04
-        CALL    L2131
-        LD      ($4ED2),HL
-        RET     
+        CALL    MOVE_PLAYER_SPRITE
+        LD      (PLAYER1_OLD_SCREEN_ADDR),HL
+        RET
 
 
-; Missile DOIT Table
-; SP1 - Sentry, POTentiometer 1 has changed
-        LD      HL,$4ECD
+MISSILE_POT1_CHANGED:
+        LD      HL,PLAYER2_AIM_X
         LD      A,B
-        CPL     
+        CPL
         AND     $FC
-        RRA     
-        RRA     
+        RRA
+        RRA
         ADD     A,$52
         CP      $8E
-        JR      C,L2112
+        JR      C,CLAMP_PLAYER2_AIM
         LD      A,$8E
-L2112:  LD      B,(HL)
+CLAMP_PLAYER2_AIM:
+        LD      B,(HL)
         LD      (HL),A
         CP      B
         RET     Z
 
         LD      D,$45
         LD      E,A
-        JR      L2125
-; Seawolf/Missile DOIT Table 
-; SP1 - Sentry, POTentiometer 1 has changed
-        LD      HL,$4ECD
+        JR      REDRAW_PLAYER2
+SEAWOLF_POT1_CHANGED:
+        LD      HL,PLAYER2_AIM_X
         LD      C,$0C
-        CALL    L214C
+        CALL    CONVERT_POT_POSITION
         LD      D,$4A
-L2125:  LD      HL,($4ED4)
+REDRAW_PLAYER2:
+        LD      HL,(PLAYER2_OLD_SCREEN_ADDR)
         LD      A,$08
-        CALL    L2131
-        LD      ($4ED4),HL
-        RET     
+        CALL    MOVE_PLAYER_SPRITE
+        LD      (PLAYER2_OLD_SCREEN_ADDR),HL
+        RET
 
 
-L2131   PUSH    DE
+; Blanks the previous position and writes the player pattern at DE.
+MOVE_PLAYER_SPRITE:
+        PUSH    DE
         LD      DE,$0505
-        DI      
-        OUT     ($19),A
+        DI
+        OUT     (XPAND),A
         XOR     A
         LD      B,A
         CP      H
         LD      A,$08
-        JR      Z,L2143
+        JR      Z,DRAW_NEW_PLAYER_SPRITE
         SET     6,H
         SYSTEM  BLANK            ;  UPI BLANK AREA
 
-L2143:  POP     DE
-        LD      HL,($4EBF)
-        SYSTEM  WRITP            ;  UPI WRITE WITH PATTERN SIZE 
+DRAW_NEW_PLAYER_SPRITE:
+        POP     DE
+        LD      HL,(PLAYER_PATTERN_PTR)
+        SYSTEM  WRITP            ;  UPI WRITE WITH PATTERN SIZE
 
-        EI      
+        EI
         EX      DE,HL
-        RET     
+        RET
 
 
-L214C:  LD      A,B
-        CPL     
+; Converts the raw knob value in B to an X coordinate in E.
+; If the position did not change, the caller's return address is discarded.
+CONVERT_POT_POSITION:
+        LD      A,B
+        CPL
         AND     $FC
-        RRA     
+        RRA
         ADD     A,C
         LD      B,(HL)
         LD      (HL),A
@@ -313,66 +375,71 @@ L214C:  LD      A,B
         CP      B
         RET     NZ
         POP     HL
-        RET     
+        RET
 
-; Seawolf/Missile DOIT Table 
-; SCT4 - Sentry, Counter-Timer 4 has counted down
-        LD      IX,$4EDA
+COUNTER4_EXPIRED:
+        LD      IX,SPAWN_BLOCK_A0
         LD      C,$05
-        JR      L2167
-                
-; Seawolf/Missile DOIT Table
-; SCT3 - Sentry, Counter-Timer 3 has counted down
-        LD      IX,$4EF8
+        JR      SPAWN_TARGET
+
+COUNTER3_EXPIRED:
+        LD      IX,SPAWN_BLOCK_B0
         LD      C,$0E
-L2167:  SYSSUK  RANGED           ;  UPI RANGED Random Number
+SPAWN_TARGET:
+        SYSSUK  RANGED           ; UPI random number
         DB      $00              ;  ... Cutoff = 0
 
         LD      DE,$6880
         BIT     3,A
-        JR      NZ,L2173
+        JR      NZ,SPAWN_DIRECTION_READY
         LD      D,$28
-L2173:  BIT     4,A
-        JR      Z,L2179
+SPAWN_DIRECTION_READY:
+        BIT     4,A
+        JR      Z,CHOOSE_TARGET_TYPE
         SET     4,E
-L2179:  AND     $03
-        JR      NZ,L217E
+CHOOSE_TARGET_TYPE:
+        AND     $03
+        JR      NZ,TARGET_TYPE_READY
         INC     A
-L217E:  INC     A
+TARGET_TYPE_READY:
+        INC     A
         PUSH    BC
         LD      C,A
         ADD     A,E
         LD      E,A
         LD      B,$00
-        LD      HL,$233A
+        LD      HL,TARGET_SPEED_TABLE-$02
         ADD     HL,BC
         POP     BC
         LD      B,(HL)
-        LD      A,($4EC2)
-        BIT     6,A
-        JR      Z,L2194
+        LD      A,(GAME_FLAGS)
+        BIT     GAME_FLAG_MISSILE,A
+        JR      Z,FIND_SPAWN_SLOT
         LD      B,$F0
-L2194:  LD      A,(IX+$01)
+FIND_SPAWN_SLOT:
+        LD      A,(IX+VBSTAT)
         BIT     7,A
-        JR      Z,L21AA
+        JR      Z,TRY_SECOND_SPAWN_SLOT
         BIT     5,A
         RET     NZ
 
-        LD      D,(IX+$00)
-        EXX     
-        LD      DE,$000F
+        LD      D,(IX+VBMR)
+        EXX
+        LD      DE,VECTOR_BLOCK_BYTES
         ADD     IX,DE
-        EXX     
-        JR      L21B7
-L21AA:  LD      A,(IX+$10)
+        EXX
+        JR      INITIALIZE_VECTOR_BLOCK
+TRY_SECOND_SPAWN_SLOT:
+        LD      A,(IX+VECTOR_BLOCK_BYTES+VBSTAT)
         BIT     7,A
-        JR      Z,L21B7
+        JR      Z,INITIALIZE_VECTOR_BLOCK
         BIT     5,A
         RET     NZ
 
-        LD      D,(IX+$0F)
-L21B7:  XOR     A
-        BIT     7,(IX+$01)
+        LD      D,(IX+VECTOR_BLOCK_BYTES)
+INITIALIZE_VECTOR_BLOCK:
+        XOR     A
+        BIT     7,(IX+VBSTAT)
         RET     NZ
 
         PUSH    IX
@@ -393,20 +460,19 @@ L21B7:  XOR     A
         LD      (HL),A
         INC     HL
         LD      (HL),$01
-        LD      (IX+$0B),C
-        RET     
+        LD      (IX+VBYH),C
+        RET
 
 
-; Seawolf/Missile DOIT Table 
-; SCT5 - Sentry, Counter-Timer 5 has counted down
-        LD      A,($4ED0)
+SEAWOLF_COUNTER5_EXPIRED:
+        LD      A,(PLAYER1_SHOT_INDEX)
         LD      B,$04
-        CALL    L20B6
-        LD      A,($4ED1)
-        LD      HL,$4F16
+        CALL    DRAW_ONE_TORPEDO_INDICATOR_FROM_A
+        LD      A,(PLAYER1_AIM_X)
+        LD      HL,PLAYER1_PROJECTILE_0
         LD      C,$80
-        CALL    L223F
-        LD      HL,$4ED0
+        CALL    ALLOCATE_PROJECTILE
+        LD      HL,PLAYER1_SHOT_INDEX
         INC     (HL)
         LD      A,(HL)
         XOR     $04
@@ -416,20 +482,19 @@ L21B7:  XOR     A
         DEC     HL
         SET     2,(HL)
         LD      A,$03
-        JR      L221D
+        JR      QUEUE_COUNTER_UPDATE
 
 
-; Call from Seawolf DOIT Table
-; SCT6 -  Sentry, Counter-Timer 6 has counted down
-        LD      A,($4ECE)
+SEAWOLF_COUNTER6_EXPIRED:
+        LD      A,(PLAYER2_SHOT_INDEX)
         LD      B,$08
-        CALL    L20B6
-        LD      A,($4ECD)
-        LD      HL,$4F25
+        CALL    DRAW_ONE_TORPEDO_INDICATOR_FROM_A
+        LD      A,(PLAYER2_AIM_X)
+        LD      HL,PLAYER2_PROJECTILE_0
         LD      C,$90
         RRC     B
-        CALL    L223F
-        LD      HL,$4ECE
+        CALL    ALLOCATE_PROJECTILE
+        LD      HL,PLAYER2_SHOT_INDEX
         INC     (HL)
         LD      A,(HL)
         XOR     $04
@@ -439,35 +504,29 @@ L21B7:  XOR     A
         INC     HL
         SET     3,(HL)
         LD      A,$05
-L221D:  LD      HL,$4FDD
+QUEUE_COUNTER_UPDATE:
+        LD      HL,CNT
         OR      (HL)
         LD      (HL),A
         RET
 
 
-; Seawolf/Missile DOIT Table         
-; ST0 - Sentry, Trigger 0 for player 1 has changed
+; The ST1 entry begins on the second byte of LD IX,$0820. The remaining
+; three bytes decode as LD HL,$0820, providing the player-two masks.
+TRIGGER0_CHANGED:
         LD      HL,$0402
-        LD      IX,$0820
-
-; Call from Seawolf/Missile DOIT Table        
-; ST1 - Sentry, Trigger 1 for player 2 has changed
-; This call from the DOIT table calls right into the middle of 
-;         LD      IX,$0820
-; The ST1 call sees this as the first statement:  
-;         LD      HL,$0820
-; I've not seen this technique used before, but perhaps it is
-; used to save a couple of bytes... or I disassembled this area
-; wrong.
+        DB      $DD                  ; IX prefix on the player-one path
+TRIGGER1_CHANGED:
+        LD      HL,$0820
         LD      A,B
         OR      A
         RET     Z
 
-        LD      A,($4FF8)
+        LD      A,(GAMSTB)
         BIT     7,A
         RET     NZ
 
-        LD      DE,$4ECF
+        LD      DE,PLAYER_SHOT_FLAGS
         LD      A,(DE)
         AND     H
         RET     NZ
@@ -475,31 +534,35 @@ L221D:  LD      HL,$4FDD
         LD      A,(DE)
         OR      L
         LD      (DE),A
-        RET     
-        
-        
-L223D:  LD      B,$01
-L223F:  CALL    L27EF
+        RET
+
+
+ALLOCATE_ONE_PROJECTILE:
+        LD      B,$01
+ALLOCATE_PROJECTILE:
+        CALL    FIND_FREE_VECTOR_BLOCK
         LD      (HL),$38
         INC     HL
         LD      (HL),C
         INC     HL
         LD      BC,$000B
-        LD      DE,$241A
+        LD      DE,PROJECTILE_VECTOR_TEMPLATE
         EX      DE,HL
-        LDIR    
-        LD      (IX+$06),A
+        LDIR
+        LD      (IX+VBXH),A
         LD      A,$FE
-        LD      ($4EC1),A
-        RET     
+        LD      (SOUND_COUNTDOWN),A
+        RET
 
 
-L2259:  LD      HL,$4EC2
-        BIT     6,(HL)
-        LD      HL,$2332
-        JR      Z,L2265
-        LD      L,$0E
-L2265:  LD      D,$00
+SELECT_OBJECT_DRAW_DATA:
+        LD      HL,GAME_FLAGS
+        BIT     GAME_FLAG_MISSILE,(HL)
+        LD      HL,SEAWOLF_DRAW_DATA_TABLE
+        JR      Z,INDEX_OBJECT_DRAW_TABLE
+        LD      L,$0E                ; Low byte of MISSILE_DRAW_DATA_TABLE
+INDEX_OBJECT_DRAW_TABLE:
+        LD      D,$00
         LD      B,A
         AND     $07
         LD      E,A
@@ -510,60 +573,70 @@ L2265:  LD      D,$00
         LD      D,(HL)
         EX      DE,HL
         CP      $01
-        JR      NZ,L2279
+        JR      NZ,SET_NORMAL_EXPANDER
         LD      A,$0C
-        JR      L2280
-L2279:  LD      A,$04
+        JR      WRITE_EXPANDER_MODE
+SET_NORMAL_EXPANDER:
+        LD      A,$04
         BIT     4,B
-        JR      Z,L2280
-        RLCA    
-L2280:  OUT     ($19),A
-        RET     
+        JR      Z,WRITE_EXPANDER_MODE
+        RLCA
+WRITE_EXPANDER_MODE:
+        OUT     (XPAND),A
+        RET
 
-; Call from Seawolf DOIT Table 
-; SCT2 - Sentry, Counter-Timer 2 has counted down
-        LD      HL,$4ED7
+SEAWOLF_COUNTER2_EXPIRED:
+        LD      HL,PLAYER2_LOAD_TIMER
         LD      DE,$0860
-        JR      L2291
+        JR      SHOW_LOAD_MESSAGE
 
-; Call from Seawolf DOIT Table
-; SCT1 - Sentry, Counter-Timer 1 has counted down
-        LD      HL,$4ED6
+SEAWOLF_COUNTER1_EXPIRED:
+        LD      HL,PLAYER1_LOAD_TIMER
         LD      DE,$041C
-L2291:  LD      (HL),$12
-        LD      HL,L2328
+SHOW_LOAD_MESSAGE:
+        LD      (HL),$12
+        LD      HL,TEXT_LOAD
         LD      C,D
         LD      D,$4F
-        DI      
-SYSTEM  STRDIS           ;  UPI STRing DISplay
+        DI
+        SYSTEM  STRDIS           ; UPI string display
 
-        EI      
-        RET     
+        EI
+        RET
 
-; DOIT Table (for Seawolf)
-L229E:  RC    SCT6, $21FA, $00   ; Sentry, Counter-Timer 6 has counted down
-        RC    SCT5, $21D7, $00   ; Sentry, Counter-Timer 5 has counted down
-        RC    SCT2, $2283, $00   ; Sentry, Counter-Timer 2 has counted down
-        RC    SCT1, $228B, $00   ; Sentry, Counter-Timer 1 has counted down
-        RC    SCT0, $2496, $00   ; Sentry, Counter-Timer 0 has counted down
-        RC    SF4,  $209E, $00   ; Sentry, Flag bit 4 has changed
-        RC    SF3,  $209B, $00   ; Sentry, Flag bit 3 has changed
-        RC    SP0,  $20EB, $00   ; Sentry, POTentiometer 0 has changed        
-        RC    SP1,  $211B, ENDx  ; Sentry, POTentiometer 1 has changed
+;-------------------------------------------------------------------------------
+; UPI event dispatch tables
+;-------------------------------------------------------------------------------
 
-; DOIT Table (for Missile or Seawolf)
-L22BA:  RC    SCT7, $24E4, $00   ; Sentry, Counter-Timer 7 has counted down 
-        RC    SCT4, $2159, $00   ; Sentry, Counter-Timer 4 has counted down
-        RC    SCT3, $2161, $00   ; Sentry, Counter-Timer 3 has counted down
-        RC    SF7,  $254B, $00   ; Sentry, Flag bit 7 has changed
-        RC    SF1,  $25AC, $00   ; Sentry, Flag bit 1 has changed 
-        RC    ST0,  $2223, $00   ; Sentry, Trigger 0 for player 1 has changed
-        RC    ST1,  $2227, $00   ; Sentry, Trigger 1 for player 2 has changed
-        RC    SSEC, $24E9, $00   ; Sentry, SEConds timer has counted down
-        MC    SKYD, $20D9, ENDx  ; Sentry, KeY is now Down       
+SEAWOLF_DOIT_TABLE:
+        RC      SCT6, SEAWOLF_COUNTER6_EXPIRED, $00
+        RC      SCT5, SEAWOLF_COUNTER5_EXPIRED, $00
+        RC      SCT2, SEAWOLF_COUNTER2_EXPIRED, $00
+        RC      SCT1, SEAWOLF_COUNTER1_EXPIRED, $00
+        RC      SCT0, SEAWOLF_COUNTER0_EXPIRED, $00
+        RC      SF4,  SEAWOLF_FLAG4_CHANGED, $00
+        RC      SF3,  SEAWOLF_FLAG3_CHANGED, $00
+        RC      SP0,  SEAWOLF_POT0_CHANGED, $00
+        RC      SP1,  SEAWOLF_POT1_CHANGED, ENDx
 
-; Music Score (Called from $25A2)
-L22D6:  DB    $88
+COMMON_DOIT_TABLE:
+        RC      SCT7, QUIT_GAME, $00
+        RC      SCT4, COUNTER4_EXPIRED, $00
+        RC      SCT3, COUNTER3_EXPIRED, $00
+        RC      SF7,  PROJECTILE_STATUS_CHANGED, $00
+        RC      SF1,  SCORE_CHANGED, $00
+        RC      ST0,  TRIGGER0_CHANGED, $00
+        RC      ST1,  TRIGGER1_CHANGED, $00
+        RC      SSEC, SECOND_ELAPSED, $00
+        MC      SKYD, KEY_DOWN, ENDx
+
+;-------------------------------------------------------------------------------
+; Music and ROM lookup tables
+;-------------------------------------------------------------------------------
+
+; Played after a projectile hits a target.
+HIT_MUSIC_SCORE:
+        DB    $88
         DB    $EF
         DB    $3F
         DB    $FF
@@ -602,8 +675,9 @@ L22D6:  DB    $88
         DB    $F4
         DB    $22
 
-; Music Score (Called from $2688)
-L22FC:  DB    $B0
+; Played for the 50-point PT boat in Seawolf.
+PT_BOAT_MUSIC_SCORE:
+        DB    $B0
         DB    $0F
         DB    $20
         DB    $A3
@@ -618,97 +692,72 @@ L22FC:  DB    $B0
         DB    $C0
         DB    $00
         DB    $23
-        DB    $C3
-        DB    $F4
-        DB    $22
-        DB    $EB
-        DB    $23
-        DB    $5B
-        DB    $27
-        DB    $F3
-        DB    $23
-        DB    $03
-        DB    $24
-        DB    $11
-        DB    $24
-        DB    $1C
-        DB    $4F
-        DB    $1C
-        DB    $53
-        DB    $2E
-        DB    $4F
-        DB    $2E
-        DB    $53
+        DB      $C3,$F4,$22
 
-; Colors for Missile
-L2320:  DB    $A2 ; - Green 
-        DB    $5B ; - Red 
-        DB    $08 ; - Blue 
-        DB    $07 ; - White 
+; Index is the low three status bits. Entry 1 is unused by object drawing;
+; its bytes double as the IM 2 vector used by the Astrocade interrupt circuit.
+MISSILE_DRAW_DATA_TABLE:
+        DW      MISSILE_EXPLOSION_DRAW_DATA
+IM2_VECTOR_WORD:
+        DW      INTERRUPT_HANDLER
+        DW      MISSILE_CARGO_DRAW_DATA
+        DW      MISSILE_BOMBER_DRAW_DATA
+        DW      MISSILE_FIGHTER_DRAW_DATA
 
-; Colors for Seawolf 
-L2324:  DB    $07 ; - White
-        DB    $55 ; - Purple-ish 
-        DB    $7F ; - Yellow 
-        DB    $F9 ; - Blue 
+TORPEDO_INDICATOR_ADDRESS_TABLE:
+        DW      $4F1C,$531C,$4F2E,$532E
 
-L2328:  DB    "LOAD",0  
-        DB    $96
-        DB    $01
-        DB    $56
-        DB    $00
-        DB    $8B
-        DB    $B6
-        DB    $23
-        DB    $97
-        DB    $23
-        DB    $6A
-        DB    $23
-        DB    $81
-        DB    $23
-        DB    $57
-        DB    $23
-        DB    $70
-        DB    $80
-        DB    $E0
-        DB    $20
-        DB    $55
-        DB    $25
-        DB    $7F
-        DB    $7D
-        DB    $7E
-        DB    $7F
-        DB    $CF
-        DB    $20
-        DB    $55
-        DB    $25
-        DB    $32
-        DB    $4D
-        DB    $4E
-        DB    $4F
-        DB    $AF
-        DB    $20
-        DB    $55
-        DB    $25
-        DB    $25
-        DB    $47
-        DB    $4F
-        DB    $9F
-        DB    $48
-        DB    $04
-        DB    $02
+MISSILE_PALETTE:
+        DB      $A2,$5B,$08,$07      ; Green, red, blue, white
 
-; Pattern (Small Boat in Seawolf)
+SEAWOLF_PALETTE:
+        DB      $07,$55,$7F,$F9      ; White, purple, yellow, blue
+
+;-------------------------------------------------------------------------------
+; Text, motion data, sound registers, and object pointer table
+;-------------------------------------------------------------------------------
+
+TEXT_LOAD:
+        DB      "LOAD"
+OBJECT_VECTOR_LEFT:
+        DB      $00,$96,$01,$56
+OBJECT_VECTOR_RIGHT:
+        DB      $00,$8B
+
+SEAWOLF_DRAW_DATA_TABLE:
+        DW      SEAWOLF_TORPEDO_DRAW_DATA
+        DW      SEAWOLF_MINE_DRAW_DATA
+        DW      SEAWOLF_TANKER_DRAW_DATA
+        DW      SEAWOLF_BATTLESHIP_DRAW_DATA
+        DW      SEAWOLF_PT_BOAT_DRAW_DATA
+
+TARGET_SPEED_TABLE:
+        DB      $70,$80,$E0
+
+MISSILE_SOUND_TABLE:
+        DB      $20,$55,$25,$7F,$7D,$7E,$7F,$CF
+        DB      $20,$55,$25,$32,$4D,$4E,$4F,$AF
+        DB      $20,$55,$25,$25,$47,$4F,$9F,$48
+
+; Each object pointer includes a two-byte displacement immediately before its
+; pattern header. Some menu-string terminators are reused as displacement data.
+SEAWOLF_PT_BOAT_DRAW_DATA:
+        DB      $04,$02
+
+PATTERN_SEAWOLF_PT_BOAT:
         DB    $02, $04 ; 2 byte x 4 line pattern size
         DB    $00, $60 ; 00000000,01100000 - . . . . . . . . . * * . . . . .
-        DB    $04, $70 ; 00000100,01110000 - . . . . . * . . . * * * . . . . 
-        DB    $03, $FF ; 00000011,11111111 - . . . . . . * * * * * * * * * * 
-        DB    $0F, $FE ; 00001111,11111110 - . . . . * * * * * * * * * * * . 
+        DB    $04, $70 ; 00000100,01110000 - . . . . . * . . . * * * . . . .
+        DB    $03, $FF ; 00000011,11111111 - . . . . . . * * * * * * * * * *
+        DB    $0F, $FE ; 00001111,11111110 - . . . . * * * * * * * * * * * .
 
-L2363:  DB    "MISSILE",$00
-        DB    $01
+TEXT_MISSILE:
+        DB      "MISSILE"
+SEAWOLF_TANKER_DRAW_DATA:
+        DB      $00,$01
 
-; Pattern (Large Ship 1 - Without Gun Turrent)
+; Tanker: 10 points.
+PATTERN_SEAWOLF_TANKER:
         DB    $03, $05      ; 3 byte x 5 line pattern size
         DB    $04, $58, $80 ; 00000100,01011000,10000000 - . . . . . * . . . * . * * . . . * . . . . . . .
         DB    $04, $F8, $80 ; 00000100,11111000,10000000 - . . . . . * . . * * * * * . . . * . . . . . . .
@@ -716,53 +765,58 @@ L2363:  DB    "MISSILE",$00
         DB    $FF, $FF, $E0 ; 11111111,11111111,11100000 - * * * * * * * * * * * * * * * * * * * . . . . .
         DB    $7F, $FF, $C0 ; 01111111,11111111,11000000 - . * * * * * * * * * * * * * * * * * . . . . . .
 
-TIMPMT  DB    "TIME",$00
-        DB    $00
+TEXT_TIME_PROMPT:
+        DB      "TIME"
+SEAWOLF_BATTLESHIP_DRAW_DATA:
+        DB      $00,$00
 
-; Pattern (Large Ship 2 - With Gun Turrent)
+; Battleship: 30 points.
+PATTERN_SEAWOLF_BATTLESHIP:
         DB    $03, $06      ; 3 byte x 6 line pattern size
         DB    $06, $C0, $00 ; 00000110,11000000,00000000 - . . . . . * * . * * . . . . . . . . . . . . . .
         DB    $06, $D9, $F8 ; 00000110,11011001,11111000 - . . . . . * * . * * . * * . . * * * * * * . . .
         DB    $4F, $FD, $C0 ; 01001111,11111101,11000000 - . * . . * * * * * * * * * * . * * * . . . . . .
-        DB    $FF, $FF, $FE ; 11111111,11111111,11111110 - * * * * * * * * * * * * * * * * * * * * * * * . 
-        DB    $FF, $FF, $FC ; 11111111,11111111,11111100 - * * * * * * * * * * * * * * * * * * * * * * . . 
-        DB    $7F, $FF, $F8 ; 01111111,11111111,11111000 - . * * * * * * * * * * * * * * * * * * * * . . . 
+        DB    $FF, $FF, $FE ; 11111111,11111111,11111110 - * * * * * * * * * * * * * * * * * * * * * * * .
+        DB    $FF, $FF, $FC ; 11111111,11111111,11111100 - * * * * * * * * * * * * * * * * * * * * * * . .
+        DB    $7F, $FF, $F8 ; 01111111,11111111,11111000 - . * * * * * * * * * * * * * * * * * * * * . . .
 
-        DB    $08
-        DB    $00
-        
-; Pattern (Floating Mine in Seawolf)
+SEAWOLF_MINE_DRAW_DATA:
+        DB      $08,$00
+
+PATTERN_SEAWOLF_MINE:
         DB    $01, $0A ; 1 byte x 10 line pattern size
         DB    $2A      ; 00101010 - . . * . * . * .
-        DB    $1C      ; 00011100 - . . . * * * . .  
-        DB    $3E      ; 00111110 - . . * * * * * .   
-        DB    $1C      ; 00011100 - . . . * * * . . 
-        DB    $2A      ; 00101010 - . . * . * . * . 
-        DB    $08      ; 00001000 - . . . . * . . .  
-        DB    $00      ; 00000000 - . . . . . . . .  
-        DB    $10      ; 00010000 - . . . * . . . . 
+        DB    $1C      ; 00011100 - . . . * * * . .
+        DB    $3E      ; 00111110 - . . * * * * * .
+        DB    $1C      ; 00011100 - . . . * * * . .
+        DB    $2A      ; 00101010 - . . * . * . * .
+        DB    $08      ; 00001000 - . . . . * . . .
         DB    $00      ; 00000000 - . . . . . . . .
-        DB    $20      ; 00100000 - . . * . . . . .  
-        
+        DB    $10      ; 00010000 - . . . * . . . .
+        DB    $00      ; 00000000 - . . . . . . . .
+        DB    $20      ; 00100000 - . . * . . . . .
+
 ; Pattern (Submarine in Seawolf)
-L23A5:  DB    $02, $04 ; 2 byte x 4 line pattern size
+PATTERN_SEAWOLF_SUBMARINE:
+        DB    $02, $04 ; 2 byte x 4 line pattern size
         DB    $01, $C0 ; 00000001,11000000 - . . . . . . . * * * . . . . . .
         DB    $01, $C0 ; 00000001,11000000 - . . . . . . . * * * . . . . . .
         DB    $FF, $FF ; 11111111,11111111 - * * * * * * * * * * * * * * * *
-        DB    $7F, $FF ; 01111111,11111111 - . * * * * * * * * * * * * * * * 
-        
+        DB    $7F, $FF ; 01111111,11111111 - . * * * * * * * * * * * * * * *
+
 ; Pattern (Player's Ship in Missile)
-L23AF:  DB    $01, $05 ; 1 byte x 4 line pattern size
-        DB    $08      ; 00001000 - . . . . * . . . 
+PATTERN_MISSILE_LAUNCHER:
+        DB    $01, $05 ; 1 byte x 5 line pattern size
+        DB    $08      ; 00001000 - . . . . * . . .
         DB    $08      ; 00001000 - . . . . * . . .
         DB    $49      ; 01001001 - . * . . * . . *
         DB    $5D      ; 01011101 - . * . * * * . *
         DB    $7F      ; 01111111 - . * * * * * * *
-        
-        DB    $08
-        DB    $00
 
-; Pattern (Torpedo Fired by Sub)
+SEAWOLF_TORPEDO_DRAW_DATA:
+        DB      $08,$00
+
+PATTERN_SEAWOLF_TORPEDO:
         DB    $01, $05 ; 1 byte x 5 line pattern size
         DB    $C0      ; 11000000 - **......
         DB    $C0      ; 11000000 - **......
@@ -770,161 +824,153 @@ L23AF:  DB    $01, $05 ; 1 byte x 4 line pattern size
         DB    $C0      ; 11000000 - **......
         DB    $C0      ; 11000000 - **......
 
-L23BF:  DB    "SEAWOLF",$00
+TEXT_SEAWOLF:
+        DB      "SEAWOLF",$00
 
-; Pattern (Torpedo in Seawolf)
-L23C7:  DB    $02, $04  ; 2 bytes, 4 lines pattern size
-        DB    $9F, $FC  ; 10011111,11111100 - * . . * * * * * * * * * * * . .  
+; Four copies are drawn above the submarine as the torpedo/load indicators.
+PATTERN_TORPEDO_INDICATOR:
+        DB    $02, $04  ; 2 bytes, 4 lines pattern size
+        DB    $9F, $FC  ; 10011111,11111100 - * . . * * * * * * * * * * * . .
         DB    $FF, $FE  ; 11111111,11111110 - * * * * * * * * * * * * * * * .
         DB    $9F, $FC  ; 10011111,11111100 - * . . * * * * * * * * * * * . .
+SEAWOLF_EXPLOSION_DRAW_DATA:
         DB    $00, $00  ; 00000000,00000000 - . . . . . . . . . . . . . . . .
 
-; Pattern (Explosion in Seawolf and Missile)
+PATTERN_SEAWOLF_EXPLOSION:
         DB    $02, $05  ; 2 bytes, 5 lines pattern size
         DB    $22, $22  ; 00100010,00100010 - . . * . . . * . . . * . . . * .
         DB    $88, $88  ; 10001000,10001000 - * . . . * . . . * . . . * . . .
         DB    $25, $10  ; 00100101,00010000 - . . * . . * . * . . . * . . . .
-        DB    $2D, $C8  ; 00101101,11001000 - . . * . * * . * * * . . * . . .  
-        DB    $0F, $F0  ; 00001111,11110000 - . . . . * * * * * * * * . . . .  
+        DB    $2D, $C8  ; 00101101,11001000 - . . * . * * . * * * . . * . . .
+        DB    $0F, $F0  ; 00001111,11110000 - . . . . * * * * * * * * . . . .
 
-        DB    $09
-        DB    $00
-        DB    $01
-        DB    $0A
-        DB    $21
-        DB    $88
-        DB    $02
-        DB    $20
-        DB    $08
-        DB    $10
-        DB    $04
-        DB    $40
-        DB    $11
-        DB    $84
-        DB    $03
-        DB    $00
-        DB    $01
-        DB    $04
-        DB    $40
-        DB    $40
-        DB    $40
-        DB    $E0
-        DB    $04
-        DB    $00
-; Pattern (Large Plane, Facing Right)
+ALT_EXPLOSION_DRAW_DATA:
+        DB      $09,$00
+PATTERN_ALT_EXPLOSION:
+        DB      $01,$0A
+        DB      $21,$88,$02,$20,$08,$10,$04,$40,$11,$84
+MISSILE_EXPLOSION_DRAW_DATA:
+        DB      $03,$00
+PATTERN_MISSILE_EXPLOSION:
+        DB      $01,$04
+        DB      $40,$40,$40,$E0
+
+MISSILE_CARGO_DRAW_DATA:
+        DB      $04,$00
+PATTERN_MISSILE_CARGO:
         DB    $02, $06 ; 2 bytes, 6 lines pattern size
         DB    $C0, $00 ; 11000000,00000000 - * * . . . . . . . . . . . . . .
-        DB    $E0, $70 ; 11100000,01110000 - * * * . . . . . . * * * . . . . 
+        DB    $E0, $70 ; 11100000,01110000 - * * * . . . . . . * * * . . . .
         DB    $FF, $FE ; 11111111,11111110 - * * * * * * * * * * * * * * * .
         DB    $FF, $FF ; 11111111,11111111 - * * * * * * * * * * * * * * * *
         DB    $FF, $FE ; 11111111,11111110 - * * * * * * * * * * * * * * * .
         DB    $07, $80 ; 00000111,10000000 - . . . . . * * * * . . . . . . .
 
-        DB    $04
-        DB    $01
-        DB    $02
-        DB    $05
-        DB    $C0
-        DB    $00
-        DB    $E0
-        DB    $60
-        DB    $FF
-        DB    $F8
-        DB    $FF
-        DB    $FC
-        DB    $7F
-        DB    $F8
-        DB    $0A
-        DB    $01
-; Pattern (Small Plane, Facing Right)
+MISSILE_BOMBER_DRAW_DATA:
+        DB      $04,$01
+PATTERN_MISSILE_BOMBER:
+        DB      $02,$05
+        DB      $C0,$00
+        DB      $E0,$60
+        DB      $FF,$F8
+        DB      $FF,$FC
+        DB      $7F,$F8
+
+MISSILE_FIGHTER_DRAW_DATA:
+        DB      $0A,$01
+PATTERN_MISSILE_FIGHTER:
         DB    $01, $05 ; 1 byte, 5 lines pattern size
         DB    $80      ; 10000000 - * . . . . . . .
         DB    $CC      ; 11001100 - * * . . * * . .
-        DB    $FE      ; 11111110 - * * * * * * * . 
+        DB    $FE      ; 11111110 - * * * * * * * .
         DB    $FF      ; 11111111 - * * * * * * * *
         DB    $7E      ; 01110111 - . * * * * * * .
- 
-        DB    $01
-        DB    $00
-        DB    $00
-        DB    $00
-        DB    $00
-        DB    $01
-        DB    $40
-        DB    $FF
-        DB    $00
-        DB    $40
-        DB    $01
 
-L2425:  LD      HL,$4ED8
+; Copied into bytes 4-14 of a newly allocated projectile vector block.
+PROJECTILE_VECTOR_TEMPLATE:
+        DB      $01,$00,$00,$00,$00,$01,$40,$FF,$00,$40,$01
+
+;-------------------------------------------------------------------------------
+; Timers and periodic UPI handlers
+;-------------------------------------------------------------------------------
+
+UPDATE_RELOAD_TIMERS:
+        LD      HL,PLAYER1_RELOAD_TICK
         DEC     (HL)
-        JR      NZ,L2448
+        JR      NZ,UPDATE_PLAYER2_RELOAD
         LD      (HL),$14
         LD      L,$CF
         BIT     5,(HL)
-        JR      Z,L243B
+        JR      Z,CHECK_PLAYER1_LOAD_TIMER
         RES     5,(HL)
-        LD      HL,$4FDD
+        LD      HL,CNT
         SET     6,(HL)
-        RET     
-      
-L243B   BIT     3,(HL)
+        RET
+
+CHECK_PLAYER1_LOAD_TIMER:
+        BIT     3,(HL)
         RET     Z
 
         LD      L,$D7
         DEC     (HL)
         RET     NZ
 
-        LD      HL,$4FDE
+        LD      HL,SEMI4S
         SET     4,(HL)
-        RET     
+        RET
 
 
-L2448:  INC     HL
+UPDATE_PLAYER2_RELOAD:
+        INC     HL
         DEC     (HL)
         RET     NZ
 
         LD      (HL),$14
         LD      L,$CF
         BIT     1,(HL)
-        JR      Z,L245B
+        JR      Z,CHECK_PLAYER2_LOAD_TIMER
         RES     1,(HL)
-        LD      HL,$4FDD
+        LD      HL,CNT
         SET     5,(HL)
-        RET     
+        RET
 
-L245B:  BIT     2,(HL)
+CHECK_PLAYER2_LOAD_TIMER:
+        BIT     2,(HL)
         RET     Z
 
         LD      L,$D6
         DEC     (HL)
         RET     NZ
 
-        LD      HL,$4FDE
-L2465:  SET     3,(HL)
-        RET     
+        LD      HL,SEMI4S
+QUEUE_SEAWOLF_COUNTER3:
+        SET     3,(HL)
+        RET
 
 
-L2468:  LD      HL,$4FF8
+UPDATE_SPAWN_TIMERS:
+        LD      HL,GAMSTB
         BIT     7,(HL)
         RET     NZ
 
         LD      L,$CA
         DEC     (HL)
-        JR      NZ,L2487
+        JR      NZ,UPDATE_SECOND_SPAWN_TIMER
         LD      (HL),$A8
         INC     HL
         DEC     (HL)
         RET     NZ
 
         LD      (HL),$03
-        LD      A,($4EC2)
-        BIT     6,A
-        JR      Z,L2483
+        LD      A,(GAME_FLAGS)
+        BIT     GAME_FLAG_MISSILE,A
+        JR      Z,QUEUE_COUNTER4
         LD      (HL),$02
-L2483:  LD      L,$DD
+QUEUE_COUNTER4:
+        LD      L,$DD                ; CNT
         SET     4,(HL)
-L2487:  LD      L,$CC
+UPDATE_SECOND_SPAWN_TIMER:
+        LD      L,$CC                ; SPAWN_TICK_B
         DEC     (HL)
         RET     NZ
 
@@ -935,160 +981,176 @@ L2487:  LD      L,$CC
 
         LD      (HL),$03
         LD      L,$DD
-        JR      L2465
+        JR      QUEUE_SEAWOLF_COUNTER3
 
 
-; Call from Seawolf DOIT Table 
-; SCT0 - Sentry, Counter-Timer 0 has counted down
-        LD      HL,$4EC4
+SEAWOLF_COUNTER0_EXPIRED:
+        LD      HL,SPAWN_PHASE
         RLC     (HL)
-        LD      IX,$4FAC
+        LD      IX,TARGET_BLOCK_2
         LD      DE,$3881
         LD      BC,$082E
-        JR      NC,$24AD
+        JR      NC,INITIALIZE_FIRST_TARGET
         LD      C,$1C
-        LD      IX,$4F8E
-        CALL    L21B7
-        JR      NZ,L24CA
-        LD      (IX+$06),$05
-        BIT     7,(IX+$10)
-        JR      Z,L24CA
-        LD      A,(IX+$15)
+        LD      IX,TARGET_BLOCK_0
+INITIALIZE_FIRST_TARGET:
+        CALL    INITIALIZE_VECTOR_BLOCK
+        JR      NZ,INITIALIZE_SECOND_TARGET
+        LD      (IX+VBXH),$05
+        BIT     7,(IX+VECTOR_BLOCK_BYTES+VBSTAT)
+        JR      Z,INITIALIZE_SECOND_TARGET
+        LD      A,(IX+VECTOR_BLOCK_BYTES+VBXH)
         CP      $37
-        JR      C,$24C5
+        JR      C,SET_FIRST_TARGET_X
         LD      A,$B5
+SET_FIRST_TARGET_X:
         ADD     A,$50
-        LD      (IX+$06),A
-L24CA:  EXX     
-        LD      DE,$000F
+        LD      (IX+VBXH),A
+INITIALIZE_SECOND_TARGET:
+        EXX
+        LD      DE,VECTOR_BLOCK_BYTES
         ADD     IX,DE
-        EXX     
-        CALL    L21B7
+        EXX
+        CALL    INITIALIZE_VECTOR_BLOCK
         RET     NZ
 
         LD      A,(IX-$09)
         CP      $37
-        JR      C,L24DE
+        JR      C,SET_SECOND_TARGET_X
         LD      A,$B5
-L24DE:  ADD     A,$50
-        LD      (IX+$06),A
-        RET     
+SET_SECOND_TARGET_X:
+        ADD     A,$50
+        LD      (IX+VBXH),A
+        RET
 
-; Seawolf/Missile DOIT Table 
-; SCT7 - Sentry, Counter-Timer 7 has counted down 
-        DI      
+QUIT_GAME:
+        DI
         SYSTEM  EMUSIC           ;  UPI End playing MUSIC
 
         SYSTEM  QUIT             ;  UPI QUIT cassette execution
 
-; Seawolf/Missile DOIT Table
-; SSEC - Sentry, SEConds timer has counted down
-        LD      HL,$4EC2
-        SET     7,(HL)
+SECOND_ELAPSED:
+        LD      HL,GAME_FLAGS
+        SET     GAME_FLAG_UPI_ACTIVE,(HL)
         SYSSUK  DISTIM           ;  UPI DISplay TIMe
         DB      $44              ;  ... X = 68
         DB      $50              ;  ... Y = 80
         DB      $8C              ;  ... Options = 140
 
-        RES     7,(HL)
-        SYSSUK  DECCTS           ;  UPI DECrement CT'S under 
+        RES     GAME_FLAG_UPI_ACTIVE,(HL)
+        SYSSUK  DECCTS           ;  UPI DECrement CT'S under
         DB      $80              ;  ... Counters = 128
 
-        LD      HL,$4FF8
+        LD      HL,GAMSTB
         BIT     7,(HL)
         RET     NZ
 
         LD      L,$DC
         LD      (HL),$03
-        RET     
+        RET
 
 
-L2503:  PUSH    BC
+;-------------------------------------------------------------------------------
+; Collision detection and scoring
+;-------------------------------------------------------------------------------
+
+; Searches four interleaved vector blocks. H and L hold the collision box;
+; on a hit, HL points to the matching block and B remains nonzero.
+FIND_COLLIDING_OBJECT:
+        PUSH    BC
         LD      B,$04
         LD      E,$05
-L2508:  LD      C,(HL)
+SCAN_COLLISION_CANDIDATE:
+        LD      C,(HL)
         INC     HL
         BIT     7,(HL)
-        JR      Z,L2543
+        JR      Z,SKIP_INACTIVE_CANDIDATE
         BIT     5,(HL)
-        JR      NZ,L2543
+        JR      NZ,SKIP_INACTIVE_CANDIDATE
         ADD     HL,DE
         LD      A,(HL)
         BIT     6,C
-        JR      Z,L251C
+        JR      Z,CLAMP_X_DISTANCE
         SUB     $88
-        NEG     
-L251C:  SUB     $0B
-        JR      NC,L2521
+        NEG
+CLAMP_X_DISTANCE:
+        SUB     $0B
+        JR      NC,CHECK_X_DISTANCE
         XOR     A
-L2521:  SUB     (IX+$06)
-        JR      NC,L2544
-        NEG     
+CHECK_X_DISTANCE:
+        SUB     (IX+VBXH)
+        JR      NC,SKIP_TO_NEXT_CANDIDATE_2
+        NEG
         EX      (SP),HL
         CP      H
         EX      (SP),HL
-        JR      NC,L2544
+        JR      NC,SKIP_TO_NEXT_CANDIDATE_2
         ADD     HL,DE
         LD      A,(HL)
-        SUB     (IX+$0B)
-        JR      NC,L2536
-        NEG     
-L2536:  EX      (SP),HL
+        SUB     (IX+VBYH)
+        JR      NC,CHECK_Y_DISTANCE
+        NEG
+CHECK_Y_DISTANCE:
+        EX      (SP),HL
         CP      L
         EX      (SP),HL
-        JR      NC,L2545
+        JR      NC,SKIP_TO_NEXT_CANDIDATE
         XOR     A
         SBC     HL,DE
         SBC     HL,DE
         DEC     HL
         POP     AF
-        RET     
-        
-L2543:  ADD     HL,DE
-L2544:  ADD     HL,DE
-L2545:  ADD     HL,DE
+        RET
+
+SKIP_INACTIVE_CANDIDATE:
+        ADD     HL,DE
+SKIP_TO_NEXT_CANDIDATE_2:
+        ADD     HL,DE
+SKIP_TO_NEXT_CANDIDATE:
+        ADD     HL,DE
         DEC     HL
-        DJNZ    L2508
+        DJNZ    SCAN_COLLISION_CANDIDATE
         POP     AF
-        RET     
+        RET
 
 
-; Seawolf/Missile DOIT Table
-; SF7 - Sentry, Flag bit 7 has changed
+PROJECTILE_STATUS_CHANGED:
         LD      B,$08
-        LD      IX,$4F07
-L2551:  EXX     
-        LD      DE,$000F
+        LD      IX,GAME_PARAMETER_BUFFER
+PROCESS_PROJECTILE_LOOP:
+        EXX
+        LD      DE,VECTOR_BLOCK_BYTES
         ADD     IX,DE
-        LD      A,(IX+$01)
+        LD      A,(IX+VBSTAT)
         BIT     5,A
-        JR      Z,L25A9
-        RES     5,(IX+$01)
+        JR      Z,NEXT_PROJECTILE
+        RES     5,(IX+VBSTAT)
         PUSH    AF
         LD      A,$17
-        CP      (IX+$0B)
-        JR      NC,$2582
-        LD      HL,$4F8E
+        CP      (IX+VBYH)
+        JR      NC,CHECK_SEAWOLF_TARGETS
+        LD      HL,TARGET_BLOCK_0
         LD      BC,$160A
-        CALL    L2503
+        CALL    FIND_COLLIDING_OBJECT
         LD      A,B
         POP     BC
         OR      A
-        JR      Z,L25A9
+        JR      Z,NEXT_PROJECTILE
         LD      E,$07
         ADD     HL,DE
         SET     7,(HL)
         ADD     HL,DE
         DEC     HL
         LD      (HL),B
-        JR      $259B
-        LD      HL,$4EDA
+        JR      START_HIT_MUSIC
+CHECK_SEAWOLF_TARGETS:
+        LD      HL,VECTOR_POOL
         LD      BC,$1C07
-        CALL    $2503
+        CALL    FIND_COLLIDING_OBJECT
         LD      A,B
         POP     BC
         OR      A
-        JR      Z,L25A9
+        JR      Z,NEXT_PROJECTILE
         INC     HL
         LD      C,(HL)
         INC     E
@@ -1096,45 +1158,51 @@ L2551:  EXX
         SET     7,(HL)
         ADD     HL,DE
         LD      (HL),B
-        CALL    L25D3
+        CALL    ADD_TARGET_SCORE
+START_HIT_MUSIC:
         LD      A,$01
-        LD      HL,$4EC2
+        LD      HL,GAME_FLAGS
         SET     0,(HL)
-        LD      HL,L22D6
-        DI      
+        LD      HL,HIT_MUSIC_SCORE
+        DI
         SYSTEM  BMUSIC           ;  UPI BEGIN PLAYING MUSIC
-        EI      
-L25A9:  EXX     
-        DJNZ    L2551
+        EI
+NEXT_PROJECTILE:
+        EXX
+        DJNZ    PROCESS_PROJECTILE_LOOP
 
-; Seawolf/Missile DOIT Table
-; SF1 - Sentry, Flag bit 1 has changed 
-        CALL    L25B7
+SCORE_CHANGED:
+        CALL    DISPLAY_PLAYER2_SCORE
         LD      DE,$0408
-        LD      HL,$4EC9
-        JR      L25BD
-L25B7:  LD      DE,$0888
-        LD      HL,$4ECB
-L25BD:  LD      C,D
+        LD      HL,PLAYER1_SCORE
+        JR      DISPLAY_SCORE
+DISPLAY_PLAYER2_SCORE:
+        LD      DE,$0888
+        LD      HL,PLAYER2_SCORE
+DISPLAY_SCORE:
+        LD      C,D
         LD      D,$50
-        EXX     
-        LD      HL,$4EC2
-        SET     7,(HL)
-        EXX     
+        EXX
+        LD      HL,GAME_FLAGS
+        SET     GAME_FLAG_UPI_ACTIVE,(HL)
+        EXX
         LD      B,$C4
         LD      IX,$020D
         SYSTEM  DISNUM           ;  UPI DISPLAY NUMBER
-        EXX     
-        RES     7,(HL)
-        RET     
+        EXX
+        RES     GAME_FLAG_UPI_ACTIVE,(HL)
+        RET
 
-L25D3   LD      HL,$4EC9
-        LD      B,(IX+$01)
+; Seawolf target types 2, 3, and 4 award 10, 30, and 50 points.
+ADD_TARGET_SCORE:
+        LD      HL,PLAYER1_SCORE
+        LD      B,(IX+VBSTAT)
         BIT     4,B
-        JR      Z,L25DF
+        JR      Z,APPLY_SCORE_VALUE
         INC     HL
         INC     HL
-L25DF:  LD      A,$07
+APPLY_SCORE_VALUE:
+        LD      A,$07
         AND     C
         DEC     A
         DEC     A
@@ -1144,23 +1212,24 @@ L25DF:  LD      A,$07
         ADD     A,$10
         LD      B,(HL)
         ADD     A,B
-        DAA     
+        DAA
         LD      (HL),A
         INC     HL
         LD      A,(HL)
         ADC     A,$00
-        DAA     
+        DAA
         LD      (HL),A
-        RET     
+        RET
 
 
-; On Collision with Torpedo and Ship in Seawolf?
-L25F7:  LD      A,$07
+; Handles a vector object that has reached a boundary or collision condition.
+HANDLE_VECTOR_LIMIT:
+        LD      A,$07
         LD      DE,$0005
         PUSH    IX
         POP     HL
-        AND     (IX+$01)
-        JR      Z,L2612
+        AND     (IX+VBSTAT)
+        JR      Z,RETIRE_PROJECTILE
         BIT     6,(HL)
         LD      (HL),$0B
         INC     HL
@@ -1170,20 +1239,26 @@ L25F7:  LD      A,$07
         LD      A,$88
         SUB     (HL)
         LD      (HL),A
-        RET     
-           
-L2612:  INC     HL
+        RET
+
+RETIRE_PROJECTILE:
+        INC     HL
         RES     7,(HL)
         SET     5,(HL)
         ADD     HL,DE
         INC     HL
         RES     7,(HL)
-        LD      HL,$4FDE
+        LD      HL,SEMI4S
         SET     7,(HL)
-        RET     
+        RET
 
-        
-L2621:  DEC     HL
+
+;-------------------------------------------------------------------------------
+; Per-interrupt vector-object update
+;-------------------------------------------------------------------------------
+
+UPDATE_VECTOR_OBJECT:
+        DEC     HL
         BIT     7,(HL)
         RET     NZ
 
@@ -1194,160 +1269,179 @@ L2621:  DEC     HL
         INC     DE
         LD      A,(DE)
         BIT     5,A
-        JP      NZ,L26B2
-        CALL    L2259
-        BIT     4,(IX+00H)
-        JR      NZ,L2662
+        JP      NZ,UPDATE_EXPLOSION
+        CALL    SELECT_OBJECT_DRAW_DATA
+        BIT     4,(IX+VBMR)
+        JR      NZ,UPDATE_TARGET_OBJECT
         SYSTEM  VWRITR           ;  UPI Vector WRITe Relative
 
-        BIT     7,(IX+$07)
-        JR      NZ,L25F7
+        BIT     7,(IX+VBXCHK)
+        JR      NZ,HANDLE_VECTOR_LIMIT
         PUSH    HL
-        LD      HL,$232C
-        LD      A,(IX+$01)
+        LD      HL,OBJECT_VECTOR_LEFT
+        LD      A,(IX+VBSTAT)
         AND     $07
-        JR      Z,L264E
-        LD      HL,$2330
-L264E:  SYSTEM  VECT             ;  UPI VECTor Move Coordinate 
+        JR      Z,APPLY_OBJECT_VECTOR
+        LD      HL,OBJECT_VECTOR_RIGHT
+APPLY_OBJECT_VECTOR:
+        SYSTEM  VECT             ; UPI vector move coordinate pair
 
         POP     HL
-        BIT     3,(IX+$0C)
-        JR      NZ,L265D
-        BIT     3,(IX+$07)
-        JR      Z,L269F
-L265D:  RES     7,(IX+$01)
-        RET     
-        
-        
-L2662:  RES     4,(IX+$00)
-        LD      A,(IX+$01)
+        BIT     3,(IX+VBYCHK)
+        JR      NZ,DEACTIVATE_VECTOR_OBJECT
+        BIT     3,(IX+VBXCHK)
+        JR      Z,MOVE_VECTOR_RELATIVE
+DEACTIVATE_VECTOR_OBJECT:
+        RES     7,(IX+VBSTAT)
+        RET
+
+
+UPDATE_TARGET_OBJECT:
+        RES     4,(IX+VBMR)
+        LD      A,(IX+VBSTAT)
         AND     $07
         CP      $02
-        JR      C,L269F
+        JR      C,MOVE_VECTOR_RELATIVE
         LD      B,A
         PUSH    HL
-        LD      HL,$4EC2
+        LD      HL,GAME_FLAGS
         BIT     0,(HL)
-        JR      NZ,L269E
-        BIT     6,(HL)
-        JR      NZ,L268E
+        JR      NZ,FINISH_TARGET_UPDATE
+        BIT     GAME_FLAG_MISSILE,(HL)
+        JR      NZ,WRITE_MISSILE_SOUND
         LD      A,$04
         CP      B
-        JR      NZ,L269E
+        JR      NZ,FINISH_TARGET_UPDATE
         PUSH    IX
         SYSSUK  BMUSIC           ;  UPI Begin playing MUSIC
-        DW      $4DA0            ;  ... Music Stack = 19872
+        DW      $4DA0            ; Music stack
         DB      $C0              ;  ... Voices = 192
-        DW      L22FC            ;  ... Score Address = 8956
+        DW      PT_BOAT_MUSIC_SCORE            ;  ... Score Address = 8956
 
         POP     IX
-        JR      L269E
-L268E:  LD      HL,$232F
+        JR      FINISH_TARGET_UPDATE
+WRITE_MISSILE_SOUND:
+        LD      HL,MISSILE_SOUND_TABLE-$10
         SYSTEM  EMUSIC           ;  UPI End playing MUSIC
 
         LD      DE,$0008
-L2696:  ADD     HL,DE
-        DJNZ    L2696
+INDEX_MISSILE_SOUND:
+        ADD     HL,DE
+        DJNZ    INDEX_MISSILE_SOUND
         LD      BC,$0818
-        OTIR    
-L269E:  POP     HL
-L269F:  IN      A,($08)
+        OTIR
+FINISH_TARGET_UPDATE:
+        POP     HL
+MOVE_VECTOR_RELATIVE:
+        IN      A,(INTST)
         SYSTEM  VWRITR           ;  UPI Vector WRITe Relative
 
         LD      A,$07
-        AND     (IX+$01)
+        AND     (IX+VBSTAT)
         RET     NZ
 
-        IN      A,($08)
+        IN      A,(INTST)
         OR      A
         RET     Z
 
-        SET     7,(IX+$07)
-        RET     
+        SET     7,(IX+VBXCHK)
+        RET
 
 
-L26B2:  EX      DE,HL
+UPDATE_EXPLOSION:
+        EX      DE,HL
         DEC     HL
         DEC     (HL)
-        JR      NZ,L26C0
+        JR      NZ,DRAW_EXPLOSION_FRAME
         INC     HL
         RES     7,(HL)
-        LD      HL,$4EC2
+        LD      HL,GAME_FLAGS
         RES     0,(HL)
-        RET     
+        RET
 
-L26C0:  AND     $07
+; The type-1 entry starts one byte into LD IY,ALT_EXPLOSION_DRAW_DATA. The
+; remaining bytes decode as LD HL,ALT_EXPLOSION_DRAW_DATA.
+DRAW_EXPLOSION_FRAME:
+        AND     $07
         CP      $01
-        LD      E,(IX+$06)
-        LD      D,(IX+$0B)
-        JR      Z,$26D0
-; Some weird (byte-saving?) coding here.  The code is different
-; depending on where the Z80 jumps to.  Hopefully I'm disassembling this
-; correctly... 
-; If Zero then, then jump to $26D0:
-; 26d0 21dd23    ld      hl,23ddh
-; If not not zero run through code as normal.
-        LD      HL,$23CF
-        LD      IY,$23DD
+        LD      E,(IX+VBXH)
+        LD      D,(IX+VBYH)
+        JR      Z,USE_ALT_EXPLOSION_DRAW_DATA
+        LD      HL,SEAWOLF_EXPLOSION_DRAW_DATA
+        DB      $FD                  ; IY prefix on the fall-through path
+USE_ALT_EXPLOSION_DRAW_DATA:
+        LD      HL,ALT_EXPLOSION_DRAW_DATA
         LD      A,$04
-        BIT     4,(IX+$0D)
-        JR      Z,L26DC
-        RLCA    
-L26DC:  OUT     ($19),A
+        BIT     4,(IX+VBOAL)
+        JR      Z,SET_EXPLOSION_EXPANDER
+        RLCA
+SET_EXPLOSION_EXPANDER:
+        OUT     (XPAND),A
         LD      A,$28
         SYSTEM  WRITR            ;  UPI WRITe RELATIVE
-        RET     
+        RET
 
 
-L26E3:  LD      B,$0C            
-        LD      HL,$4EC2
-        BIT     7,(HL)
+; Chooses one active object from alternating halves of the vector pool.
+SELECT_NEXT_OBJECT:
+        LD      B,$0C
+        LD      HL,GAME_FLAGS
+        BIT     GAME_FLAG_UPI_ACTIVE,(HL)
         INC     HL
         LD      C,(HL)
         RET     NZ
 
         PUSH    IX
         POP     HL
-L26F0:  XOR     A
+SCAN_OBJECTS:
+        XOR     A
         OR      H
-        JR      Z,L2703
+        JR      Z,SELECT_SCAN_START
         PUSH    HL
-        LD      DE,$4FBB
+        LD      DE,TARGET_BLOCK_3
         BIT     0,C
-        JR      NZ,L26FE
+        JR      NZ,TEST_LAST_OBJECT_GROUP
         LD      E,$7F
-L26FE:  SBC     HL,DE
+TEST_LAST_OBJECT_GROUP:
+        SBC     HL,DE
         POP     HL
-        JR      NZ,L270D
-L2703:  LD      HL,$4EDB
+        JR      NZ,ADVANCE_SCAN_POINTER
+SELECT_SCAN_START:
+        LD      HL,VECTOR_POOL+VBSTAT
         BIT     0,C
-        JR      Z,L2711
-        LD      HL,$4F07
-L270D:  LD      DE,$0010
+        JR      Z,TEST_OBJECT_ACTIVE
+        LD      HL,GAME_PARAMETER_BUFFER
+ADVANCE_SCAN_POINTER:
+        LD      DE,VECTOR_BLOCK_BYTES+1
         ADD     HL,DE
-L2711:  BIT     7,(HL)
+TEST_OBJECT_ACTIVE:
+        BIT     7,(HL)
         DEC     HL
-        JR      Z,L272A
+        JR      Z,NEXT_SCAN_OBJECT
         BIT     0,C
         PUSH    HL
         POP     IX
-        LD      A,(IX+$0B)
-        JR      NZ,L2726
+        LD      A,(IX+VBYH)
+        JR      NZ,TEST_ODD_OBJECT_Y
         CP      $12
-        JR      C,L272D
-        JR      L272A
-L2726:  CP      $12
-        JR      NC,L272D
-L272A:  DJNZ    L26F0
+        JR      C,STORE_OBJECT_CURSOR
+        JR      NEXT_SCAN_OBJECT
+TEST_ODD_OBJECT_Y:
+        CP      $12
+        JR      NC,STORE_OBJECT_CURSOR
+NEXT_SCAN_OBJECT:
+        DJNZ    SCAN_OBJECTS
         LD      H,B
-L272D:  BIT     0,C
-        JR      NZ,L2735
-        LD      ($4EC5),HL
-        RET     
+STORE_OBJECT_CURSOR:
+        BIT     0,C
+        JR      NZ,STORE_ODD_OBJECT_CURSOR
+        LD      (EVEN_OBJECT_CURSOR),HL
+        RET
 
-        
-L2735:  LD      ($4EC7),HL
-        LD      HL,$4EC1
+
+STORE_ODD_OBJECT_CURSOR:
+        LD      (ODD_OBJECT_CURSOR),HL
+        LD      HL,SOUND_COUNTDOWN
         LD      A,(HL)
         OR      A
         RET     Z
@@ -1358,110 +1452,121 @@ L2735:  LD      ($4EC7),HL
         BIT     0,(HL)
         RET     NZ
 
-        OUT     ($17),A
-        RET     
+        OUT     (VOLN),A
+        RET
 
 
-; DOIT Table (Missile)
-L2748:  RC    SCT6, $27CA, $00   ; Sentry, Counter-Timer 6 has counted down
-        RC    SCT5, $27BA, $00   ; Sentry, Counter-Timer 5 has counted down
-        RC    SP0,  $20DB, $00   ; Sentry, POTentiometer 0 has changed
-        RC    SP1,  $2101, $00   ; Sentry, POTentiometer 1 has changed
-        RC    SJ0,  $27E3, $00   ; Sentry, Joystick 0 for player 1 has changed
-        RC    SJ1,  $27E9, ENDx  ; Sentry, Joystick 1 for player 2 has changed
+MISSILE_DOIT_TABLE:
+        RC      SCT6, MISSILE_COUNTER6_EXPIRED, $00
+        RC      SCT5, MISSILE_COUNTER5_EXPIRED, $00
+        RC      SP0,  MISSILE_POT0_CHANGED, $00
+        RC      SP1,  MISSILE_POT1_CHANGED, $00
+        RC      SJ0,  MISSILE_JOYSTICK0_CHANGED, $00
+        RC      SJ1,  MISSILE_JOYSTICK1_CHANGED, ENDx
 
-L275B:  PUSH    AF
+; IM 2 entry selected by I=$23 and interrupt feedback byte $10. The vector word
+; at $2310 points here.
+INTERRUPT_HANDLER:
+        PUSH    AF
         PUSH    BC
         PUSH    DE
         PUSH    HL
         PUSH    IX
         PUSH    IY
-        LD      DE,($4EC7)
+        LD      DE,(ODD_OBJECT_CURSOR)
         LD      A,$24
-        LD      HL,$4EC3
+        LD      HL,INTERRUPT_PHASE
         RLC     (HL)
-        JR      C,L2776
-        LD      DE,($4EC5)
+        JR      C,RUN_INTERRUPT_TASKS
+        LD      DE,(EVEN_OBJECT_CURSOR)
         LD      A,$A7
-L2776:  PUSH    DE
+RUN_INTERRUPT_TASKS:
+        PUSH    DE
         POP     IX
-        OUT     ($0F),A
-        CALL    L2621
-        CALL    L2425
-        CALL    L2468
-        CALL    L26E3
-        LD      HL,$4EDC
+        OUT     (INLIN),A
+        CALL    UPDATE_VECTOR_OBJECT
+        CALL    UPDATE_RELOAD_TIMERS
+        CALL    UPDATE_SPAWN_TIMERS
+        CALL    SELECT_NEXT_OBJECT
+        LD      HL,VECTOR_POOL+VBTIMB
         BIT     0,C
-        JR      NZ,L2794
+        JR      NZ,ADVANCE_OBJECT_TIMERS
         CALL    STIMER
-        LD      HL,$4F54
-L2794:  LD      DE,$000F
+        LD      HL,VECTOR_POOL+(8*VECTOR_BLOCK_BYTES)+VBTIMB
+ADVANCE_OBJECT_TIMERS:
+        LD      DE,VECTOR_BLOCK_BYTES
         LD      B,$08
-L2799:  INC     (HL)
+ADVANCE_NEXT_TIMER:
+        INC     (HL)
         ADD     HL,DE
-        DJNZ    L2799
+        DJNZ    ADVANCE_NEXT_TIMER
         POP     IY
         POP     IX
         POP     HL
         POP     DE
         POP     BC
         POP     AF
-        EI      
+        EI
         RET
 
-        
-L27A7:  LD      A,$FC
+
+; Converts joystick bits 2-3 into a signed vector delta in DE.
+DECODE_JOYSTICK_DELTA:
+        LD      A,$FC
         LD      DE,$40FF
         BIT     2,B
         RET     NZ
 
         LD      DE,$C000
-        NEG     
+        NEG
         BIT     3,B
         RET     NZ
 
         XOR     A
         LD      D,A
-        RET     
+        RET
 
-        
-; Missile DOIT Table        
-; SCT5 - Sentry, Counter-Timer 5 has counted down
-        LD      HL,$4F16
-        LD      A,($4ED1)
+
+MISSILE_COUNTER5_EXPIRED:
+        LD      HL,PLAYER1_PROJECTILE_0
+        LD      A,(PLAYER1_AIM_X)
         LD      C,$80
-        CALL    L223D
-        LD      HL,$4FE4
-        JR      L27D8
-; Missile DOIT Table
-; SCT6 - Sentry, Counter-Timer 6 has counted down
-        LD      HL,$4F25
-        LD      A,($4ECD)
+        CALL    ALLOCATE_ONE_PROJECTILE
+        LD      HL,OSW0
+        JR      READ_JOYSTICK
+MISSILE_COUNTER6_EXPIRED:
+        LD      HL,PLAYER2_PROJECTILE_0
+        LD      A,(PLAYER2_AIM_X)
         LD      C,$90
-        CALL    L223D
-        LD      HL,$4FE5
-L27D8:  LD      B,(HL)
-L27D9:  CALL    L27A7
-        LD      (IX+$03),D
-        LD      (IX+$04),E
-        RET     
+        CALL    ALLOCATE_ONE_PROJECTILE
+        LD      HL,OSW1
+READ_JOYSTICK:
+        LD      B,(HL)
+UPDATE_MISSILE_VECTOR:
+        CALL    DECODE_JOYSTICK_DELTA
+        LD      (IX+VBDXL),D
+        LD      (IX+VBDXH),E
+        RET
 
-; Missile DOIT Table
-; SJ0 - Sentry, Joystick 0 for player 1 has changed
-        LD      IX,$4F16
-        JR      L27D9
-; Missile DOIT Table
-; SJ1 - Sentry, Joystick 1 for player 2 has changed
-        LD      IX,$4F25
-        JR      L27D9
-L27EF:  LD      DE,$001E
-L27F2:  PUSH    HL
+MISSILE_JOYSTICK0_CHANGED:
+        LD      IX,PLAYER1_PROJECTILE_0
+        JR      UPDATE_MISSILE_VECTOR
+MISSILE_JOYSTICK1_CHANGED:
+        LD      IX,PLAYER2_PROJECTILE_0
+        JR      UPDATE_MISSILE_VECTOR
+
+; Finds an inactive block among one player's four interleaved projectile slots.
+; On exhaustion it discards this routine's and its caller's return addresses.
+FIND_FREE_VECTOR_BLOCK:
+        LD      DE,PLAYER_VECTOR_STRIDE
+TEST_FREE_VECTOR_BLOCK:
+        PUSH    HL
         POP     IX
-        BIT     7,(IX+$01)
+        BIT     7,(IX+VBSTAT)
         RET     Z
 
         ADD     HL,DE
-        DJNZ    L27F2
+        DJNZ    TEST_FREE_VECTOR_BLOCK
         POP     HL
         POP     HL
-        RET     
+        RET

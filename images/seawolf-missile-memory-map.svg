@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1420" viewBox="0 0 1200 1420" role="img" aria-labelledby="title desc">
+  <title id="title">Seawolf / Missile Z80 memory map</title>
+  <desc id="desc">The 64 KB Z80 address space, including the Astrocade system ROM, 2 KB cartridge ROM, video RAM, game RAM, vector-object pool, and system RAM.</desc>
+  <defs>
+    <linearGradient id="rom" x1="0" x2="1">
+      <stop offset="0" stop-color="#51205f"/>
+      <stop offset="1" stop-color="#73347a"/>
+    </linearGradient>
+    <linearGradient id="cart" x1="0" x2="1">
+      <stop offset="0" stop-color="#6b3b24"/>
+      <stop offset="1" stop-color="#91522d"/>
+    </linearGradient>
+    <linearGradient id="ram" x1="0" x2="1">
+      <stop offset="0" stop-color="#155b42"/>
+      <stop offset="1" stop-color="#227153"/>
+    </linearGradient>
+    <linearGradient id="unused" x1="0" x2="1">
+      <stop offset="0" stop-color="#35404c"/>
+      <stop offset="1" stop-color="#505b67"/>
+    </linearGradient>
+    <style>
+      .title { fill:#f4f7fb; font:700 42px Georgia,serif; letter-spacing:2px }
+      .subtitle { fill:#9cb2c6; font:20px system-ui,sans-serif; letter-spacing:1px }
+      .range { fill:#c6d4e1; font:22px ui-monospace,SFMono-Regular,Consolas,monospace }
+      .heading { fill:#ffffff; font:700 27px system-ui,sans-serif }
+      .body { fill:#dbe5ed; font:18px system-ui,sans-serif }
+      .small { fill:#b9c9d6; font:16px system-ui,sans-serif }
+      .mono { fill:#d9e8f3; font:17px ui-monospace,SFMono-Regular,Consolas,monospace }
+      .rowrange { fill:#7dd8ff; font:16px ui-monospace,SFMono-Regular,Consolas,monospace }
+      .rowtext { fill:#eaf2f7; font:17px system-ui,sans-serif }
+      .badge { fill:#071018; stroke:#dbe7ef; stroke-width:1 }
+      .badgetext { fill:#e9f2f7; font:15px ui-monospace,SFMono-Regular,Consolas,monospace }
+      .card { stroke:#f1f5f8; stroke-width:1.2 }
+      .inner { fill:#071018; stroke:#c8d6e0; stroke-width:1 }
+    </style>
+  </defs>
+
+  <g transform="translate(32 24)">
+    <rect class="inner" x="0" y="0" width="1136" height="110" rx="18"/>
+    <text class="title" x="28" y="54">SEAWOLF / MISSILE</text>
+    <text class="subtitle" x="30" y="86">Z80 CPU ADDRESS SPACE · BALLY PROFESSIONAL ARCADE / ASTROCADE</text>
+    <g transform="translate(1053 54)" stroke="#55c7ff" fill="none" stroke-width="3">
+      <circle r="29"/>
+      <path d="M-45 0h90M0-45v90"/>
+      <circle r="4" fill="#ffbf45" stroke="none"/>
+    </g>
+  </g>
+
+  <g transform="translate(32 154)">
+    <rect class="card" fill="url(#unused)" width="1136" height="128" rx="18"/>
+    <text class="range" x="28" y="43">$5000-$FFFF</text>
+    <text class="heading" x="238" y="43">Not used by this cartridge</text>
+    <rect class="badge" x="1010" y="21" width="96" height="32" rx="16"/>
+    <text class="badgetext" x="1058" y="42" text-anchor="middle">44 KB</text>
+    <text class="body" x="28" y="79">No Seawolf / Missile code or data is assigned above the console's 4 KB RAM.</text>
+    <text class="small" x="28" y="106">Memory expansions may map hardware into this range.</text>
+  </g>
+
+  <g transform="translate(32 302)">
+    <rect class="card" fill="url(#ram)" width="1136" height="500" rx="18"/>
+    <text class="range" x="28" y="43">$4000-$4FFF</text>
+    <text class="heading" x="238" y="43">Video and work RAM</text>
+    <rect class="badge" x="1010" y="21" width="96" height="32" rx="16"/>
+    <text class="badgetext" x="1058" y="42" text-anchor="middle">4 KB</text>
+    <text class="body" x="28" y="78">The cartridge divides the console RAM between the visible framebuffer, Z80 stack,</text>
+    <text class="body" x="28" y="104">game state, sixteen vector-object records, spawn timers, and Astrocade system RAM.</text>
+
+    <g transform="translate(28 132)">
+      <rect class="inner" width="1080" height="53" rx="10"/>
+      <text class="rowrange" x="18" y="33">$4FCE-$4FFF</text>
+      <text class="rowtext" x="238" y="33">Astrocade system RAM and UPI state</text>
+      <text class="small" x="1048" y="33" text-anchor="end">50 B</text>
+    </g>
+    <g transform="translate(28 195)">
+      <rect class="inner" width="1080" height="53" rx="10"/>
+      <text class="rowrange" x="18" y="33">$4FCA-$4FCD</text>
+      <text class="rowtext" x="238" y="33">Target spawn ticks and countdowns</text>
+      <text class="small" x="1048" y="33" text-anchor="end">4 B</text>
+    </g>
+    <g transform="translate(28 258)">
+      <rect class="inner" width="1080" height="53" rx="10"/>
+      <text class="rowrange" x="18" y="33">$4EDA-$4FC9</text>
+      <text class="rowtext" x="238" y="33">16 × 15-byte vector-object records</text>
+      <text class="small" x="1048" y="33" text-anchor="end">240 B</text>
+    </g>
+    <g transform="translate(28 321)">
+      <rect class="inner" width="1080" height="53" rx="10"/>
+      <text class="rowrange" x="18" y="33">$4EBF-$4ED9</text>
+      <text class="rowtext" x="238" y="33">Game flags, scores, aim positions, and reload state</text>
+      <text class="small" x="1048" y="33" text-anchor="end">27 B</text>
+    </g>
+    <g transform="translate(28 384)">
+      <rect class="inner" width="1080" height="53" rx="10"/>
+      <text class="rowrange" x="18" y="33">$4D98-$4EBE</text>
+      <text class="rowtext" x="238" y="33">Z80 stack headroom; SP starts at $4EBF and grows downward</text>
+      <text class="small" x="1048" y="33" text-anchor="end">295 B</text>
+    </g>
+    <g transform="translate(28 447)">
+      <rect class="inner" width="1080" height="53" rx="10"/>
+      <text class="rowrange" x="18" y="33">$4000-$4D97</text>
+      <text class="rowtext" x="238" y="33">Visible framebuffer: 87 rows × 40 bytes</text>
+      <text class="small" x="1048" y="33" text-anchor="end">3,480 B</text>
+    </g>
+  </g>
+
+  <g transform="translate(32 822)">
+    <rect class="card" fill="url(#unused)" width="1136" height="112" rx="18"/>
+    <text class="range" x="28" y="43">$2800-$3FFF</text>
+    <text class="heading" x="238" y="43">Unused cartridge space</text>
+    <rect class="badge" x="1010" y="21" width="96" height="32" rx="16"/>
+    <text class="badgetext" x="1058" y="42" text-anchor="middle">6 KB</text>
+    <text class="body" x="28" y="79">The cartridge slot permits an 8 KB image; this title uses the first 2 KB.</text>
+  </g>
+
+  <g transform="translate(32 954)">
+    <rect class="card" fill="url(#cart)" width="1136" height="178" rx="18"/>
+    <text class="range" x="28" y="43">$2000-$27FF</text>
+    <text class="heading" x="238" y="43">Seawolf / Missile cartridge ROM</text>
+    <rect class="badge" x="1010" y="21" width="96" height="32" rx="16"/>
+    <text class="badgetext" x="1058" y="42" text-anchor="middle">2 KB</text>
+    <text class="body" x="28" y="79">Menu records, both game loops, UPI dispatch tables, music, graphics, object tables,</text>
+    <text class="body" x="28" y="105">native Z80 routines, and the IM 2 interrupt handler at $275B.</text>
+    <rect class="inner" x="28" y="123" width="1080" height="39" rx="10"/>
+    <text class="mono" x="46" y="149">seawolf.bin · SHA-1 4c2ca46ab5a00dc2eb252ee900b2760b758a2162</text>
+  </g>
+
+  <g transform="translate(32 1152)">
+    <rect class="card" fill="url(#rom)" width="1136" height="178" rx="18"/>
+    <text class="range" x="28" y="43">$0000-$1FFF</text>
+    <text class="heading" x="238" y="43">Astrocade system ROM</text>
+    <rect class="badge" x="1010" y="21" width="96" height="32" rx="16"/>
+    <text class="badgetext" x="1058" y="42" text-anchor="middle">8 KB</text>
+    <text class="body" x="28" y="79">Console firmware, menu services, fonts, timers, music, controller scanning, and the</text>
+    <text class="body" x="28" y="105">User Program Interface used throughout the cartridge.</text>
+    <rect class="inner" x="28" y="123" width="1080" height="39" rx="10"/>
+    <text class="mono" x="46" y="149">astro.bin · SHA-1 b902c941997c9d150a560435bf517c6a28137ecc</text>
+  </g>
+
+  <g transform="translate(32 1350)">
+    <rect class="inner" width="1136" height="50" rx="14"/>
+    <text class="small" x="20" y="31"><tspan fill="#ffcb55" font-weight="700">IM 2:</tspan> I=$23 and interrupt feedback $10 read the vector at $2310, which points to the handler at $275B.</text>
+  </g>
+</svg>
