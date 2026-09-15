@@ -1,0 +1,33 @@
+%% missile-event-loop_v002_20260915.mermaid
+%% Version .002 — 2026-09-15
+%% Verified against Seawolf(1).asm: MISSILE_EVENT_LOOP, COMMON_DOIT_TABLE, MISSILE_DOIT_TABLE.
+graph TD
+    classDef upi fill:#7c2d12,stroke:#9a3412,stroke-width:2px,color:#fff;
+    classDef handler fill:#9a3412,stroke:#b45309,stroke-width:2px,color:#fff;
+
+    subgraph MISSILE_EVENT_LOOP
+        A[DO SENTRY<br>ALKEYS $0214]:::upi --> B[DO DOIT<br>COMMON_DOIT_TABLE]:::upi
+        B --> C{Common event matched?}
+
+        C -->|SCT7| E1[QUIT_GAME]:::handler
+        C -->|SCT4| E2[COUNTER4_EXPIRED<br>spawn target]:::handler
+        C -->|SCT3| E3[COUNTER3_EXPIRED<br>spawn target]:::handler
+        C -->|SF7| E4[PROJECTILE_STATUS_CHANGED]:::handler
+        C -->|SF1| E5[SCORE_CHANGED]:::handler
+        C -->|ST0| E6[TRIGGER0_CHANGED]:::handler
+        C -->|ST1| E7[TRIGGER1_CHANGED]:::handler
+        C -->|SSEC| E8[SECOND_ELAPSED]:::handler
+        C -->|SKYD| E9[KEY_DOWN]:::handler
+        C -->|No common match| D[DO DOIT<br>MISSILE_DOIT_TABLE]:::upi
+
+        D --> F{Missile event matched?}
+        F -->|SCT6| G1[MISSILE_COUNTER6_EXPIRED<br>launch player-2 missile]:::handler
+        F -->|SCT5| G2[MISSILE_COUNTER5_EXPIRED<br>launch player-1 missile]:::handler
+        F -->|SP0| G3[MISSILE_POT0_CHANGED<br>move player-1 launcher]:::handler
+        F -->|SP1| G4[MISSILE_POT1_CHANGED<br>move player-2 launcher]:::handler
+        F -->|SJ0| G5[MISSILE_JOYSTICK0_CHANGED<br>update player-1 missile vector]:::handler
+        F -->|SJ1| G6[MISSILE_JOYSTICK1_CHANGED<br>update player-2 missile vector]:::handler
+        F -->|No match| H[DO MJUMP<br>MISSILE_EVENT_LOOP]:::upi
+
+        E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 & E9 & G1 & G2 & G3 & G4 & G5 & G6 --> H
+    end

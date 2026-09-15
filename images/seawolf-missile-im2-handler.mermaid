@@ -1,0 +1,28 @@
+%% seawolf-missile-im2-handler_v002_20260915.mermaid
+%% Version .002 — 2026-09-15
+%% Verified against Seawolf(1).asm: INTERRUPT_HANDLER, UPDATE_VECTOR_OBJECT, UPDATE_RELOAD_TIMERS, UPDATE_SPAWN_TIMERS, SELECT_NEXT_OBJECT.
+graph TD
+    classDef register fill:#1f2937,stroke:#374151,stroke-width:2px,color:#fff;
+    classDef routine fill:#065f46,stroke:#047857,stroke-width:2px,color:#fff;
+    classDef phase fill:#7c2d12,stroke:#b45309,stroke-width:2px,color:#fff;
+    classDef hardware fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#fff;
+
+    INT_Trigger([Astrocade IM 2 interrupt]) --> Context_Save[PUSH AF BC DE HL IX IY]:::register
+    Context_Save --> LoadOdd[DE = ODD_OBJECT_CURSOR<br>A = $24]:::register
+    LoadOdd --> Phase[RLC INTERRUPT_PHASE]:::phase
+    Phase -->|Carry set| Odd[Use ODD cursor<br>INLIN = $24]:::phase
+    Phase -->|Carry clear| Even[DE = EVEN_OBJECT_CURSOR<br>INLIN = $A7]:::phase
+
+    Odd & Even --> SelectCurrent[IX = selected object cursor<br>OUT (INLIN),A]:::register
+    SelectCurrent --> Vector[CALL UPDATE_VECTOR_OBJECT<br>draw/move object, target, or explosion]:::routine
+    Vector --> Reload[CALL UPDATE_RELOAD_TIMERS<br>service both player reload/load state machines]:::routine
+    Reload --> Spawn[CALL UPDATE_SPAWN_TIMERS<br>service both spawn counters]:::routine
+    Spawn --> Next[CALL SELECT_NEXT_OBJECT<br>choose next object for alternating half]:::routine
+
+    Next --> TimerHalf{BIT 0,C<br>selected half?}:::phase
+    TimerHalf -->|C bit 1| TimersOdd[HL = VECTOR_POOL + VBTIMB<br>increment 8 timers: blocks 0-7]:::hardware
+    TimerHalf -->|C bit 0| GameTimer[CALL STIMER<br>then HL = VECTOR_POOL + 8*15 + VBTIMB]:::hardware
+    GameTimer --> TimersEven[Increment 8 timers:<br>blocks 8-15]:::hardware
+
+    TimersOdd & TimersEven --> Restore[POP IY IX HL DE BC AF]:::register
+    Restore --> Return[EI; RET]:::register

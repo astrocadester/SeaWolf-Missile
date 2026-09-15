@@ -2,7 +2,7 @@
 
 This project is a byte-exact reconstruction and documented disassembly of **Seawolf / Missile** Dave Nutting Associates (DNA) game developed by Rick Spiece published by Bally in 1978 for the Bally Professional Arcade / Astrocade.
 
-This project builds upon the disassembly work of Adam Trionfo's 2011 v0.002
+**This project builds upon the disassembly work of Adam Trionfo's 2011 v0.002**
 
 ![Seawolf / Missile catalog artwork](images/seawolf-missile-catalog.png)
 
@@ -11,16 +11,26 @@ This project builds upon the disassembly work of Adam Trionfo's 2011 v0.002
 | Cartridge ROM | 2 KB at `$2000-$27FF` |
 | Assembler | Bruce Norskog's zmac 1.3 |
 | ROM identity | SHA-1 `4c2ca46ab5a00dc2eb252ee900b2760b758a2162` |
-| MAME package | `roms/astrocde.zip` |
+| MAME package* | `roms/seawolf.zip` |
+* Read the build notes below for how/why this build script actually producses a astrocde.zip
 
 ## The two games
+Bally originally published the two-in-one combat shooter package as Sea Wolf / Missile in 1977. 
+
+![Seawolf / Missile cartridge](images/seawolf-cart.png)
 
 **Seawolf** puts each player in control of a submarine. The controller knob moves the submarine and the trigger fires a torpedo. Four torpedoes are loaded at a time; firing all four starts a four-second reload. Tankers score 10 points, battleships score 30, and P.T. boats score 50. Floating mines intercept torpedoes.
 
+![Seawolf](images/seawolf.png)
+
 **Missile** uses the knob to move a ground launcher. The trigger launches a missile and the joystick steers it left or right after launch. Targets are cargo planes, bombers, and fighters.
 
- Bally originally published the two-in-one combat shooter package as Sea Wolf / Missile in 1977. When they re-issued the cartridge under a fresh production batch, they retitled it to Sea Wolf / Bombardier.
+![Missile](images/missile.png)
+
+ When they re-issued the cartridge under a fresh production batch, they retitled it to Sea Wolf / Bombardier.
  Because the Bombardier variant was printed in much smaller quantities later in the console's life cycle, it is significantly rarer and more sought after by collectors than the standard Missile labeled cartridge
+
+![Seawolf / Bombardier cartridge](images/seawolf-bombadier-cartridge-label.jpg)
 
 ## Project layout
 
@@ -64,18 +74,20 @@ scanning, timers, text, patterns, vector movement, screen clearing, score
 display, and music. `HVGLIB.H` supplies the equates and macros used to encode
 these calls.
 
-Both games follow the same foreground structure:
+**Seawolf / Missile Game Initialization**
+Both games enter through their cartridge menu entries and share the INITIALIZE_GAME routine, which establishes the interpreter context, clears working RAM, initializes counters and flags, and configures IM 2 interrupts. Each game then performs its own video, palette, object-pattern, and game-specific setup before entering its event loop.
 
-1. The cartridge menu enters `START_SEAWOLF` or `START_MISSILE`.
-2. `INITIALIZE_GAME` reads the time parameter, clears display and work RAM,
-   initializes counters, and installs the interrupt vector.
-3. `SENTRY` watches controller changes, counter expirations, flags, and the
-   one-second timer.
-4. `DOIT` dispatches common events and then the table for the selected game.
-5. `MJUMP` returns to the game's event loop.
+![Seawolf / Missile game init](images/seawolf-missile-game-init.svg)
 
-`SEAWOLF_DOIT_TABLE`, `MISSILE_DOIT_TABLE`, and `COMMON_DOIT_TABLE` expose the
-complete foreground event routing in the source.
+**Seawolf Event Loop**
+The Seawolf event loop first dispatches the shared game events and then processes Seawolf-specific events for torpedo launches, load messages, target refresh, shot indicators, and submarine movement. Both paths return through the same event-loop dispatch cycle.
+
+![Seawolf event loop](images/seawolf-event-loop.svg)
+
+**Missile Event Loop**
+The Missile event loop uses the Astrocade SENTRY/DOIT mechanism to dispatch common game events before falling through to a Missile-specific event table. Missile-specific handlers manage torpedo launches, launcher movement, and joystick-driven missile vector updates.
+
+![Missile event loop](images/missile-event-loop.svg)
 
 ### IM 2 interrupt path
 
@@ -95,11 +107,17 @@ runtime work in short pieces:
 This keeps object movement, collision state, reload timing, and target spawning
 running while the foreground UPI loop handles input events and score display.
 
+![Seawolf / Missile IM2 Handler](images/seawolf-missile-im2-handler.svg)
+
 ### Vector-object pool
 
 The game stores sixteen 15-byte vector records at `$4EDA-$4FC9`. Each record
 uses the standard Astrocade vector layout defined by `VBMR` through `VBOAH` in
 `HVGLIB.H`.
+
+UPDATE_VECTOR_OBJECT is the shared object-update engine used by Seawolf and Missile. It dispatches objects into normal vector movement and boundary handling, target-specific movement and sound behavior, or explosion animation and deactivation.
+
+![Seawolf / Missile Update Vector Object](images/seawolf-update-vector-object.svg)
 
 | Records | RAM | Use |
 | ---: | ---: | --- |
@@ -118,10 +136,12 @@ selects torpedo, mine, tanker, battleship, and P.T. boat patterns. Missile
 selects explosion, cargo plane, bomber, and fighter patterns. The source names
 the draw-data prefixes as well as the pattern headers they precede.
 
-The graphics region also contains both four-color palettes, the player
-submarine and launcher, torpedo indicators, explosion frames, two music
-streams, and three eight-byte Missile sound-register sets. Seawolf scoring is
+The graphics contains the player submarine and launcher, torpedo indicators, explosion frames, two music streams, and three eight-byte Missile sound-register sets. Seawolf scoring is
 packed BCD; target types 2, 3, and 4 convert directly to 10, 30, and 50 points.
+
+The graphics region also contains the two four-color palettes used by the games. MISSILE_PALETTE contains $A2,$5B,$08,$07 (green, red, blue, white), while SEAWOLF_PALETTE contains $07,$55,$7F,$F9 (white, purple, yellow, blue). Each palette is loaded with the Astrocade COLSET operation during game initialization.
+
+![Seawolf / Missile Palettes](images/seawolf-missile-palettes.svg)
 
 ### Shared and overlapping bytes
 
