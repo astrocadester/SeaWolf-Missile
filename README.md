@@ -1,6 +1,6 @@
 # Seawolf / Missile
 
-This project is a byte-exact reconstruction and documented disassembly of **Seawolf / Missile** Dave Nutting Associates (DNA) game developed by Rick Spiece published by Bally in 1978 for the Bally Professional Arcade / Astrocade.
+This project is a byte-exact reconstruction and documented disassembly of **Seawolf / Missile** Dave Nutting Associates (DNA) cartridge game developed by Rick Spiece published by Bally for the Bally Professional Arcade / Astrocade.
 
 **This project builds upon the disassembly work of Adam Trionfo's 2011 v0.002**
 
@@ -15,7 +15,9 @@ This project is a byte-exact reconstruction and documented disassembly of **Seaw
 * Read the build notes below for how/why this build script actually producses a astrocde.zip
 
 ## The two games
-Bally originally published the two-in-one combat shooter package as Sea Wolf / Missile in 1977. 
+The code, packaging, and initial manufacturing preparation for the two-in-one Sea Wolf / Missile (Product Code 2002) were completed in 1977. 
+
+The Bally Professional Arcade hardware faced FCC approval delays and quality control roadblocks throughout the fall of 1977. Units didn't actually start trickling out to consumers who pre-ordered via the JS&A catalogs until the end of December 1977 and into January/February 1978. Because the hardware was delayed, the cartridge wasn't commercially available to play in homes until early 1978.
 
 ![Seawolf / Missile cartridge](images/seawolf-cart.png)
 
@@ -43,13 +45,10 @@ Bally originally published the two-in-one combat shooter package as Sea Wolf / M
 | `build.bat` | Windows build, verification, and MAME packaging script |
 | `tools/zmac` | Bundled Linux zmac 1.3 executable |
 | `tools/zmac.exe` | Bundled Windows zmac 1.3 executable |
-| `roms/original/astro.bin` | User-supplied Astrocade system ROM |
+| `roms/original/astro.bin` | Astrocade system ROM |
 | `roms/astrocde.zip` | Generated merged MAME test package |
 | `docs/` | Original manual and technical references |
 | `images/` | Cartridge, catalog, and memory-map images |
-
-`src/zout/` and `roms/astrocde.zip` are generated outputs. The source and
-reference material remain separate from the build products.
 
 ## ROM organization
 
